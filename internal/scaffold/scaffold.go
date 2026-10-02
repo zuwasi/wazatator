@@ -44,7 +44,7 @@ func TitleCase(s string) string {
 }
 
 // ReadProjectDefaults reads engine and model from .waza.yaml if it exists.
-// Falls back to copilot-sdk and claude-sonnet-4.6.
+// Falls back to claude-cli and claude-sonnet-4.6.
 func ReadProjectDefaults() (engine, model string) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -89,7 +89,7 @@ config:
   parallel: false
   executor: %s
   model: %s
-metrics:
+%smetrics:
   - name: task_completion
     weight: 1.0
     threshold: 0.8
@@ -107,7 +107,18 @@ graders:
         - "(?i)(explain|describe|analyze|implement)"
 tasks:
   - %q
-`, name, name, name, engine, model, taskGlob)
+`, name, name, name, engine, model, EngineConfigExtras(engine), taskGlob)
+}
+
+// EngineConfigExtras returns engine-specific config lines for scaffolded
+// evals. Claude Code discovers and invokes skills natively, so claude-cli
+// evals skip injecting the skill body; otherwise Claude never needs to call
+// its Skill tool and skill_invocation graders and trigger tests cannot pass.
+func EngineConfigExtras(engine string) string {
+	if engine == "claude-cli" {
+		return "  inject_skill_body: false\n"
+	}
+	return ""
 }
 
 // TaskFiles returns a map of task filename to content.

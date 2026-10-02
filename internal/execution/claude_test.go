@@ -191,9 +191,9 @@ func TestClaudeModelName(t *testing.T) {
 }
 
 func TestNewAuxiliaryEngine(t *testing.T) {
-	t.Setenv("WAZA_EXECUTOR", "claude-cli")
-	assert.IsType(t, &ClaudeEngine{}, NewAuxiliaryEngine("sonnet"))
 	t.Setenv("WAZA_EXECUTOR", "")
+	assert.IsType(t, &ClaudeEngine{}, NewAuxiliaryEngine("sonnet"))
+	t.Setenv("WAZA_EXECUTOR", "copilot-sdk")
 	assert.IsType(t, &CopilotEngine{}, NewAuxiliaryEngine("sonnet"))
 }
 
@@ -277,6 +277,29 @@ func TestClaudeEngine_Execute(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(data, &log))
 	assert.Contains(t, strings.Join(log.Args, " "), "--resume sess-1")
+}
+
+// Trigger tests pass the eval directory as SourceDir; the skill may live next
+// to the current directory instead, as it does for regular task runs.
+func TestClaudeEngine_FindsSkillFromCurrentDirWhenSourceDirLacksIt(t *testing.T) {
+	e, logPath := newFakeClaudeEngine(t, "ok")
+	skillRoot := writePirateSkill(t)
+	t.Chdir(skillRoot)
+
+	_, err := e.Execute(context.Background(), &ExecutionRequest{
+		Message:   "hi",
+		SkillName: "pirate-greeter",
+		SourceDir: t.TempDir(), // eval dir without the skill
+	})
+	require.NoError(t, err)
+
+	var log struct {
+		SkillInstalled bool `json:"skillInstalled"`
+	}
+	data, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &log))
+	assert.True(t, log.SkillInstalled)
 }
 
 func TestClaudeEngine_ExecuteReportsCLIError(t *testing.T) {

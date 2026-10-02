@@ -30,7 +30,7 @@ const (
 	DefaultTaskGlob       = "tasks/*.yaml"
 	DefaultTaskFileSuffix = ".yaml"
 
-	DefaultEngine  = "copilot-sdk"
+	DefaultEngine  = "claude-cli"
 	DefaultModel   = "claude-sonnet-4.6"
 	DefaultTimeout = 300
 	DefaultWorkers = 0

@@ -248,7 +248,7 @@ func TestInitCommand_WazaYAMLContent(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(target, ".waza.yaml"))
 	require.NoError(t, err)
 	content := string(data)
-	assert.Contains(t, content, "engine: copilot-sdk")
+	assert.Contains(t, content, "engine: claude-cli")
 	assert.Contains(t, content, "model: claude-sonnet-4.6")
 	assert.Contains(t, content, "defaults:")
 	assert.Contains(t, content, "paths:")

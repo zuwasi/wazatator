@@ -1,0 +1,13 @@
+{
+  "name": "wazatator",
+  "displayName": "Wazatator",
+  "version": "0.1.0",
+  "description": "Evaluate Agent Skills with Claude Code: scaffold eval suites, run them, score the results, and fix what fails",
+  "author": {
+    "name": "Daniel Liezrowice"
+  },
+  "homepage": "https://github.com/zuwasi/wazatator",
+  "repository": "https://github.com/zuwasi/wazatator",
+  "license": "MIT",
+  "keywords": ["skills", "evals", "testing", "benchmark", "agent-skills"]
+}

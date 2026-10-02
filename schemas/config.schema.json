@@ -60,7 +60,7 @@
           "type": "string",
           "description": "Execution engine for evaluations.",
           "enum": ["copilot-sdk", "claude-cli", "mock"],
-          "default": "copilot-sdk"
+          "default": "claude-cli"
         },
         "model": {
           "type": "string",

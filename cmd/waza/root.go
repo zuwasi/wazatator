@@ -15,12 +15,15 @@ var version = "dev"
 
 func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "waza",
-		Short: "Waza - CLI tool for evaluating Agent Skills",
-		Long: `Waza is a command-line tool for evaluating Agent Skills.
+		Use:   "wazatator",
+		Short: "Wazatator - evaluate Agent Skills with Claude Code",
+		Long: `Wazatator is a command-line tool for evaluating Agent Skills with Claude Code
+(and the GitHub Copilot SDK).
 
 It provides tools to run benchmarks, validate agent behavior, and measure
-performance against predefined test cases.`,
+performance against predefined test cases.
+
+Based on Microsoft Waza (MIT). Not affiliated with or endorsed by Microsoft.`,
 		Version:      version,
 		SilenceUsage: true,
 	}

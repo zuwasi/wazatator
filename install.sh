@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# install.sh — Download and install the latest waza binary from GitHub.
-# Usage: curl -fsSL https://raw.githubusercontent.com/microsoft/waza/main/install.sh | bash
+# install.sh — Download and install the latest wazatator binary from GitHub.
+# Usage: curl -fsSL https://raw.githubusercontent.com/zuwasi/wazatator/main/install.sh | bash
 
-REPO="microsoft/waza"
-BINARY_NAME="waza"
+REPO="zuwasi/wazatator"
+BINARY_NAME="wazatator"
 
 # Global so the EXIT trap can access it after main() returns
 tmpdir=""
@@ -82,7 +82,7 @@ main() {
   echo "Detected platform: ${os}/${arch}"
   if [ "$os" = "linux" ] && is_wsl; then
     echo "Note: Detected WSL; installing the Linux binary inside WSL."
-    echo "For native Windows, download waza-windows-${arch}.exe from the newest vX.Y.Z CLI release at https://github.com/${REPO}/releases."
+    echo "For native Windows, download wazatator-windows-${arch}.exe from the newest vX.Y.Z CLI release at https://github.com/${REPO}/releases."
   fi
 
   # Get latest stable CLI release tag. The repository also publishes azd

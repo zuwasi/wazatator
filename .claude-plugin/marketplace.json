@@ -1,0 +1,14 @@
+{
+  "name": "wazatator",
+  "description": "Wazatator: evaluate and improve Agent Skills with Claude Code",
+  "owner": {
+    "name": "Daniel Liezrowice"
+  },
+  "plugins": [
+    {
+      "name": "wazatator",
+      "source": "./claude-plugin",
+      "description": "Run eval suites, quality checks, and trigger tests for your Agent Skills through Claude Code, then fix what fails"
+    }
+  ]
+}

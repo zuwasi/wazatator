@@ -152,7 +152,7 @@ config:
   parallel: false
   executor: %s
   model: %s
-metrics:
+%smetrics:
   - name: task_completion
     weight: 0.7
     threshold: 0.8
@@ -168,7 +168,7 @@ graders:
       max_tokens: 1200
 tasks:
   - %q
-`, skillName, skillName, skillName, engine, model, taskGlob)
+`, skillName, skillName, skillName, engine, model, scaffold.EngineConfigExtras(engine), taskGlob)
 }
 
 func triggerTaskYAML(id, name, prompt string, shouldTrigger bool, keywords []string) string {

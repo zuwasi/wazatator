@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/microsoft/waza/internal/models"
 	"github.com/microsoft/waza/internal/validation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,6 +74,18 @@ func TestEvalYAML(t *testing.T) {
 	assert.Contains(t, content, "type: code")
 	assert.Contains(t, content, "type: text")
 	assert.Contains(t, content, `"tasks/*.yaml"`)
+	assert.NotContains(t, content, "inject_skill_body")
+}
+
+func TestEvalYAML_ClaudeCLIUsesNativeSkillDiscovery(t *testing.T) {
+	content := EvalYAML("my-skill", "claude-cli", "sonnet")
+	assert.Contains(t, content, "  model: sonnet\n  inject_skill_body: false\nmetrics:")
+
+	path := filepath.Join(t.TempDir(), "eval.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	spec, err := models.LoadEvalSpec(path)
+	require.NoError(t, err)
+	assert.False(t, spec.Config.ShouldInjectSkillBody())
 }
 
 func TestEvalYAML_CustomEngine(t *testing.T) {
@@ -126,7 +139,7 @@ func TestReadProjectDefaults(t *testing.T) {
 
 	// No .waza.yaml → defaults
 	engine, model := ReadProjectDefaults()
-	assert.Equal(t, "copilot-sdk", engine)
+	assert.Equal(t, "claude-cli", engine)
 	assert.Equal(t, "claude-sonnet-4.6", model)
 }
 

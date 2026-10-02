@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
-# install.ps1 - Download and install the latest native Windows waza binary.
-# Usage: irm https://raw.githubusercontent.com/microsoft/waza/main/install.ps1 | iex
+# install.ps1 - Download and install the latest native Windows wazatator binary.
+# Usage: irm https://raw.githubusercontent.com/zuwasi/wazatator/main/install.ps1 | iex
 
-$Repo = 'microsoft/waza'
-$BinaryName = 'waza'
-$TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("waza-install-{0}" -f ([System.Guid]::NewGuid()))
+$Repo = 'zuwasi/wazatator'
+$BinaryName = 'wazatator'
+$TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("wazatator-install-{0}" -f ([System.Guid]::NewGuid()))
 $Scheduled = $false
 
 function Get-WazaArchitecture {
@@ -28,7 +28,7 @@ function Get-InstallDirectory {
         return Split-Path -Parent $existing.Source
     }
 
-    $dir = Join-Path $env:LOCALAPPDATA 'Microsoft\Waza'
+    $dir = Join-Path $env:LOCALAPPDATA 'Wazatator'
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     return $dir
 }
@@ -36,7 +36,7 @@ function Get-InstallDirectory {
 function Get-LatestReleaseTag {
     $page = 1
     while ($true) {
-        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=100&page=$page" -Headers @{ 'User-Agent' = 'waza-installer' }
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=100&page=$page" -Headers @{ 'User-Agent' = 'wazatator-installer' }
         $release = $releases | Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1
         if ($release) {
             return $release.tag_name
@@ -74,18 +74,18 @@ while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
 Move-Item -LiteralPath $sourceLiteral -Destination $destinationLiteral -Force
 Remove-Item -LiteralPath $tempDirLiteral -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''
-Write-Host "Installed waza $versionLiteral to $destinationLiteral"
+Write-Host "Installed wazatator $versionLiteral to $destinationLiteral"
 "@
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($moveScript))
         $powerShellPath = (Get-Process -Id $PID).Path
         Start-Process -FilePath $powerShellPath -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) | Out-Null
-        Write-Host 'Update scheduled. It will finish after the current waza process exits.'
+        Write-Host 'Update scheduled. It will finish after the current wazatator process exits.'
         return
     }
 
     Move-Item -LiteralPath $Source -Destination $Destination -Force
     Write-Host ''
-    Write-Host "Installed waza $Version to $Destination"
+    Write-Host "Installed wazatator $Version to $Destination"
 }
 
 try {
@@ -131,7 +131,7 @@ try {
     $existingCommand = Get-Command "$BinaryName.exe" -ErrorAction SilentlyContinue
     $existingDir = if ($existingCommand -and $existingCommand.Source) { Split-Path -Parent $existingCommand.Source } else { $null }
     if ($installDir -ne $existingDir) {
-        Write-Host "Note: Add $installDir to your PATH if waza is not found after installation."
+        Write-Host "Note: Add $installDir to your PATH if wazatator is not found after installation."
     }
 }
 finally {

@@ -54,14 +54,14 @@ func NewClaudeEngine(defaultModelID string) *ClaudeEngine {
 	}
 }
 
-// NewAuxiliaryEngine builds the engine for commands outside `waza run`
-// (quality, suggest, spec verify, dev, tokens suggest). Set
-// WAZA_EXECUTOR=claude-cli to use Claude Code instead of the Copilot SDK.
+// NewAuxiliaryEngine builds the engine for commands outside `run`
+// (quality, suggest, spec verify, dev, tokens suggest). Claude Code is the
+// default; set WAZA_EXECUTOR=copilot-sdk to use the Copilot SDK instead.
 func NewAuxiliaryEngine(modelID string) AgentEngine {
-	if os.Getenv("WAZA_EXECUTOR") == "claude-cli" {
-		return NewClaudeEngine(modelID)
+	if os.Getenv("WAZA_EXECUTOR") == "copilot-sdk" {
+		return NewCopilotEngineBuilder(modelID, nil).Build()
 	}
-	return NewCopilotEngineBuilder(modelID, nil).Build()
+	return NewClaudeEngine(modelID)
 }
 
 // claudeModelName converts Copilot-style Claude model names
@@ -107,17 +107,21 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 		return nil, err
 	}
 
-	sourceDir := req.SourceDir
-	if sourceDir == "" {
-		if sourceDir, err = os.Getwd(); err != nil {
-			return nil, fmt.Errorf("failed to get current directory: %w", err)
-		}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current directory: %w", err)
 	}
 
 	var systemParts []string
 	var skillCopyRel string
 	if !req.NoSkills {
-		skillDirs := append([]string{sourceDir}, req.SkillPaths...)
+		// Search the request's source dir (the eval dir for trigger tests), then
+		// the current directory, as task runs do, then configured skill paths.
+		skillDirs := []string{cwd}
+		if req.SourceDir != "" && req.SourceDir != cwd {
+			skillDirs = []string{req.SourceDir, cwd}
+		}
+		skillDirs = append(skillDirs, req.SkillPaths...)
 		if skillCopyRel, err = installClaudeSkill(skillDirs, req.SkillName, workspaceDir, workingDir); err != nil {
 			return nil, err
 		}

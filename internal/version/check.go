@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	defaultOwner = "microsoft"
-	defaultRepo  = "waza"
+	defaultOwner = "zuwasi"
+	defaultRepo  = "wazatator"
 	cacheTTL     = 24 * time.Hour
 	cacheFile    = "version-check.json"
 	httpTimeout  = 5 * time.Second
@@ -29,13 +29,13 @@ const (
 
 const (
 	// BashInstallScriptURL is the official Bash installer for macOS, Linux, and Windows Bash environments.
-	BashInstallScriptURL = "https://raw.githubusercontent.com/microsoft/waza/main/install.sh"
+	BashInstallScriptURL = "https://raw.githubusercontent.com/zuwasi/wazatator/main/install.sh"
 	// PowerShellInstallScriptURL is the official PowerShell installer for native Windows environments.
-	PowerShellInstallScriptURL = "https://raw.githubusercontent.com/microsoft/waza/main/install.ps1"
+	PowerShellInstallScriptURL = "https://raw.githubusercontent.com/zuwasi/wazatator/main/install.ps1"
 	// InstallScriptURL is the default Unix-like installer URL retained for existing callers.
 	InstallScriptURL = BashInstallScriptURL
 	// DefaultUpdateCommand is the recommended command for upgrading waza.
-	DefaultUpdateCommand = "waza update"
+	DefaultUpdateCommand = "wazatator update"
 )
 
 type releaseInfo struct {
@@ -110,7 +110,7 @@ func NewChecker(currentVersion string, opts ...Option) *Checker {
 	if ch.cacheDir == "" {
 		home, err := os.UserHomeDir()
 		if err == nil {
-			ch.cacheDir = filepath.Join(home, ".waza")
+			ch.cacheDir = filepath.Join(home, ".wazatator")
 		}
 	}
 	return ch

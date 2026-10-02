@@ -21,7 +21,7 @@ func TestNew_ReturnsAllDefaults(t *testing.T) {
 	assertEqual(t, "Files.TaskFileSuffix", ".yaml", cfg.Files.TaskFileSuffix)
 
 	// Defaults
-	assertEqual(t, "Defaults.Engine", "copilot-sdk", cfg.Defaults.Engine)
+	assertEqual(t, "Defaults.Engine", "claude-cli", cfg.Defaults.Engine)
 	assertEqual(t, "Defaults.Model", "claude-sonnet-4.6", cfg.Defaults.Model)
 	assertEqual(t, "Defaults.JudgeModel", "", cfg.Defaults.JudgeModel)
 	assertEqualInt(t, "Defaults.Timeout", 300, cfg.Defaults.Timeout)

@@ -501,8 +501,8 @@ func TestNewCommand_EvalYAMLContent(t *testing.T) {
 	assert.Contains(t, content, "type: text")
 	assert.NotContains(t, content, "type: behavior")
 
-	// Verify default engine is copilot-sdk (not mock)
-	assert.Contains(t, content, "executor: copilot-sdk")
+	// Verify default engine is claude-cli (not mock)
+	assert.Contains(t, content, "executor: claude-cli")
 	assert.NotContains(t, content, "executor: mock")
 
 	// Verify task glob

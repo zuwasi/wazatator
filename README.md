@@ -1,6 +1,10 @@
-# Waza
+# Wazatator
 
-A Go CLI for evaluating AI agent skills — scaffold eval suites, run benchmarks, and compare results across models.
+Evaluate AI agent skills with **Claude Code**: scaffold eval suites, run benchmarks, and compare results across models. Wazatator watches the agent run your skill (transcript, tool calls, files) and scores it.
+
+> Wazatator is a fork of [Microsoft Waza](https://github.com/microsoft/waza) (MIT License) that adds a Claude Code executor (`executor: claude-cli`, the default) and a Claude Code plugin. It is not affiliated with or endorsed by Microsoft. Upstream copyright notices are kept in [LICENSE](LICENSE). The CLI binary is `wazatator`; command examples below that say `waza` work the same with `wazatator`.
+
+**Claude Code plugin:** `/plugin marketplace add zuwasi/wazatator`, then `/plugin install wazatator@wazatator`. See [claude-plugin/README.md](claude-plugin/README.md).
 
 📖 **[Getting Started / Docs](https://microsoft.github.io/waza/)**
 
@@ -11,20 +15,20 @@ A Go CLI for evaluating AI agent skills — scaffold eval suites, run benchmarks
 Download and install the latest pre-built binary with the Bash install script on macOS, Linux, or Windows Bash environments such as Git Bash, MSYS2, or Cygwin:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/microsoft/waza/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zuwasi/wazatator/main/install.sh | bash
 ```
 
-The Bash script auto-detects the OS and architecture of the environment where Bash is running (linux/darwin/windows, amd64/arm64), downloads the latest standalone `waza` CLI release, verifies the checksum, and installs to `/usr/local/bin` (or `~/bin` if not writable).
+The Bash script auto-detects the OS and architecture of the environment where Bash is running (linux/darwin/windows, amd64/arm64), downloads the latest standalone `wazatator` CLI release, verifies the checksum, and installs to `/usr/local/bin` (or `~/bin` if not writable).
 
 For native Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/microsoft/waza/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/zuwasi/wazatator/main/install.ps1 | iex
 ```
 
-The PowerShell script downloads the latest standalone native Windows `waza` binary, verifies the checksum, and installs to an existing `waza.exe` location or `%LOCALAPPDATA%\Microsoft\Waza`. On Windows, piping the Bash command from PowerShell may invoke WSL and install the Linux binary inside WSL.
+The PowerShell script downloads the latest standalone native Windows `wazatator` binary, verifies the checksum, and installs to an existing `wazatator.exe` location or `%LOCALAPPDATA%\Wazatator`. On Windows, piping the Bash command from PowerShell may invoke WSL and install the Linux binary inside WSL.
 
-Or browse the [GitHub Releases](https://github.com/microsoft/waza/releases) page and choose the standalone waza binary assets for the version you want.
+Or browse the [GitHub Releases](https://github.com/zuwasi/wazatator/releases) page and choose the standalone wazatator binary assets for the version you want.
 
 ### Install from Source
 
@@ -1534,7 +1538,7 @@ Waza can validate your skill in CI before publishing:
 
 **Option 1: Binary install (recommended)**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/microsoft/waza/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zuwasi/wazatator/main/install.sh | bash
 ```
 
 **Option 2: Install from source**
@@ -1564,7 +1568,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install waza
-        run: curl -fsSL https://raw.githubusercontent.com/microsoft/waza/main/install.sh | bash
+        run: curl -fsSL https://raw.githubusercontent.com/zuwasi/wazatator/main/install.sh | bash
       - run: waza run eval/eval.yaml --verbose --output results.json
       - uses: actions/upload-artifact@v4
         with:

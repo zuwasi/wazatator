@@ -192,7 +192,7 @@ func TestPrintNotice_UpdateAvailable(t *testing.T) {
 	output := string(out[:n])
 	assert.Contains(t, output, "v1.0.0")
 	assert.Contains(t, output, "v2.0.0")
-	assert.Contains(t, output, "waza update")
+	assert.Contains(t, output, "wazatator update")
 }
 
 func TestPrintNotice_CustomInstallCmd(t *testing.T) {
