@@ -45,6 +45,13 @@ A skill that explains code snippets in clear, educational language. Helps develo
 | Output | Plain language explanation |
 | Best for | Learning, onboarding, code comprehension |
 
+## Finding the Code
+
+If the user refers to "this code" but no snippet is in the message, do not ask for the code right away:
+
+1. Use code from the conversation, or files the user attached or selected.
+2. Otherwise list the working directory. If there is exactly one source file, or one clearly matching the request, read it and explain it, and say which file you explained.
+3. Ask the user for the code only when there is no candidate file or several equally likely ones.
 ## Explanation Guidelines
 
 ### Structure
