@@ -126,7 +126,10 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 		modelID = req.ModelID
 	}
 
-	args := []string{"-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions"}
+	// Skip user-level settings (personal plugins, skills, hooks) and MCP
+	// connectors so results depend on the skill under test, not the machine.
+	args := []string{"-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
+		"--setting-sources", "project,local", "--strict-mcp-config"}
 	if modelID != "" {
 		args = append(args, "--model", modelID)
 	}
@@ -288,11 +291,22 @@ func installClaudeSkill(skillDirs []string, skillName, workspaceDir, workingDir 
 	if _, err := os.Stat(dst); err == nil {
 		return filepath.ToSlash(rel), nil // follow-up turn reusing the workspace
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return "", fmt.Errorf("creating claude skills dir: %w", err)
 	}
-	if err := os.CopyFS(dst, os.DirFS(sd.Dir)); err != nil {
+	if err := os.WriteFile(filepath.Join(dst, "SKILL.md"), []byte(sd.Content), 0o644); err != nil {
 		return "", fmt.Errorf("copying skill %q into workspace: %w", sd.Name, err)
+	}
+	// Copy only the optional Agent Skills directories, not eval artifacts
+	// (tasks, fixtures, results) that often live next to SKILL.md.
+	for _, sub := range []string{"scripts", "references", "assets"} {
+		src := filepath.Join(sd.Dir, sub)
+		if info, err := os.Stat(src); err != nil || !info.IsDir() {
+			continue
+		}
+		if err := os.CopyFS(filepath.Join(dst, sub), os.DirFS(src)); err != nil {
+			return "", fmt.Errorf("copying skill %q %s: %w", sd.Name, sub, err)
+		}
 	}
 	return filepath.ToSlash(rel), nil
 }

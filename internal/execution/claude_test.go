@@ -106,6 +106,28 @@ func TestParseClaudeStream(t *testing.T) {
 	}, types)
 }
 
+func TestInstallClaudeSkill_CopiesOnlySkillContent(t *testing.T) {
+	root := writePirateSkill(t)
+	skillDir := filepath.Join(root, "pirate-greeter")
+	for _, f := range []string{"scripts/run.sh", "references/guide.md", "tasks/task.yaml", "results.json"} {
+		p := filepath.Join(skillDir, f)
+		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
+		require.NoError(t, os.WriteFile(p, []byte("x"), 0o644))
+	}
+	ws := t.TempDir()
+
+	rel, err := installClaudeSkill([]string{root}, "pirate-greeter", ws, ws)
+	require.NoError(t, err)
+	assert.Equal(t, ".claude/skills/pirate-greeter", rel)
+
+	dst := filepath.Join(ws, ".claude", "skills", "pirate-greeter")
+	assert.FileExists(t, filepath.Join(dst, "SKILL.md"))
+	assert.FileExists(t, filepath.Join(dst, "scripts", "run.sh"))
+	assert.FileExists(t, filepath.Join(dst, "references", "guide.md"))
+	assert.NoDirExists(t, filepath.Join(dst, "tasks"))
+	assert.NoFileExists(t, filepath.Join(dst, "results.json"))
+}
+
 func TestClaudeSkillName(t *testing.T) {
 	assert.Equal(t, "pdf", claudeSkillName(map[string]any{"skill": "pdf"}))
 	assert.Equal(t, "pdf", claudeSkillName(map[string]any{"skill": "docs-plugin:pdf"}))
@@ -166,6 +188,7 @@ func TestClaudeEngine_Execute(t *testing.T) {
 	assert.True(t, log.SkillInstalled)
 	joined := strings.Join(log.Args, " ")
 	assert.Contains(t, joined, "-p --output-format stream-json --verbose")
+	assert.Contains(t, joined, "--setting-sources project,local --strict-mcp-config")
 	assert.Contains(t, joined, "--model haiku")
 	assert.Contains(t, joined, "<skill_context>")
 	assert.NotContains(t, joined, "--resume")
