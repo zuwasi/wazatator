@@ -35,7 +35,7 @@ const (
 )
 
 var newChatEngine = func(modelID string) execution.AgentEngine {
-	return execution.NewCopilotEngineBuilder(modelID, nil).Build()
+	return execution.NewAuxiliaryEngine(modelID)
 }
 
 func newSuggestCmd() *cobra.Command {

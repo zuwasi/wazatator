@@ -1,16 +1,20 @@
 package execution
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
+	"github.com/microsoft/waza/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,13 +46,65 @@ func fakeClaude(mode string) int {
 	logData, _ := json.Marshal(map[string]any{"args": os.Args[1:], "stdin": string(stdin), "skillInstalled": skillErr == nil})
 	_ = os.WriteFile(os.Getenv("WAZA_FAKE_CLAUDE_LOG"), logData, 0o644)
 
-	if mode == "error" {
+	switch mode {
+	case "error":
 		fmt.Println(`{"type":"result","subtype":"success","is_error":true,"result":"Failed to authenticate","session_id":"sess-err"}`)
 		return 1
+	case "hang":
+		time.Sleep(10 * time.Second)
+		return 0
+	case "judge":
+		// Act like a judge model: call the waza grading tool over MCP.
+		if err := fakeClaudeCallBridgeTool(os.Args[1:], "set_waza_grade_pass", map[string]any{"description": "d", "reason": "r"}); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Println(`{"type":"assistant","session_id":"judge","message":{"content":[{"type":"tool_use","id":"j1","name":"mcp__waza__set_waza_grade_pass","input":{"description":"d","reason":"r"}}]}}`)
+		fmt.Println(`{"type":"result","subtype":"success","is_error":false,"result":"graded","session_id":"judge","num_turns":1}`)
+		return 0
 	}
 	_ = os.WriteFile(filepath.Join(cwd, "greeting.txt"), []byte("Ahoy"), 0o644)
 	fmt.Print(claudeFixtureStream)
 	return 0
+}
+
+// fakeClaudeCallBridgeTool reads the --mcp-config file and calls a tool on
+// the "waza" HTTP MCP server, as Claude Code would.
+func fakeClaudeCallBridgeTool(args []string, tool string, toolArgs map[string]any) error {
+	var cfgPath string
+	for i, a := range args {
+		if a == "--mcp-config" && i+1 < len(args) {
+			cfgPath = args[i+1]
+		}
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return err
+	}
+	var cfg struct {
+		MCPServers map[string]struct {
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return err
+	}
+	srv := cfg.MCPServers[claudeToolServerName]
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": toolArgs}})
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, bytes.NewReader(body))
+	for k, v := range srv.Headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bridge returned %s", resp.Status)
+	}
+	return nil
 }
 
 func newFakeClaudeEngine(t *testing.T, mode string) (*ClaudeEngine, string) {
@@ -126,6 +182,19 @@ func TestInstallClaudeSkill_CopiesOnlySkillContent(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dst, "references", "guide.md"))
 	assert.NoDirExists(t, filepath.Join(dst, "tasks"))
 	assert.NoFileExists(t, filepath.Join(dst, "results.json"))
+}
+
+func TestClaudeModelName(t *testing.T) {
+	assert.Equal(t, "claude-sonnet-4-6", claudeModelName("claude-sonnet-4.6"))
+	assert.Equal(t, "sonnet", claudeModelName("sonnet"))
+	assert.Equal(t, "gpt-5.1", claudeModelName("gpt-5.1"))
+}
+
+func TestNewAuxiliaryEngine(t *testing.T) {
+	t.Setenv("WAZA_EXECUTOR", "claude-cli")
+	assert.IsType(t, &ClaudeEngine{}, NewAuxiliaryEngine("sonnet"))
+	t.Setenv("WAZA_EXECUTOR", "")
+	assert.IsType(t, &CopilotEngine{}, NewAuxiliaryEngine("sonnet"))
 }
 
 func TestClaudeSkillName(t *testing.T) {
@@ -220,10 +289,144 @@ func TestClaudeEngine_ExecuteReportsCLIError(t *testing.T) {
 	assert.Equal(t, "sess-err", resp.SessionID)
 }
 
-func TestClaudeEngine_RejectsUnsupportedFeatures(t *testing.T) {
-	e := NewClaudeEngine("")
-	_, err := e.Execute(context.Background(), &ExecutionRequest{Message: "x", Tools: []copilot.Tool{{Name: "t"}}})
-	assert.ErrorContains(t, err, "custom tools")
-	_, err = e.Execute(context.Background(), &ExecutionRequest{Message: "x", MCPServers: map[string]copilot.MCPServerConfig{"m": nil}})
-	assert.ErrorContains(t, err, "MCP")
+func readFakeClaudeArgs(t *testing.T, logPath string) []string {
+	t.Helper()
+	var log struct {
+		Args []string `json:"args"`
+	}
+	data, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &log))
+	return log.Args
+}
+
+// TestClaudeEngine_CustomToolsViaMCPBridge covers prompt graders: in-process
+// tool handlers must be callable by Claude through the MCP bridge.
+func TestClaudeEngine_CustomToolsViaMCPBridge(t *testing.T) {
+	e, logPath := newFakeClaudeEngine(t, "judge")
+	var calls []map[string]any
+	tool := copilot.Tool{
+		Name:       "set_waza_grade_pass",
+		Parameters: map[string]any{"type": "object"},
+		Handler: func(inv copilot.ToolInvocation) (copilot.ToolResult, error) {
+			calls = append(calls, inv.Arguments.(map[string]any))
+			return copilot.ToolResult{}, nil
+		},
+	}
+
+	resp, err := e.Execute(context.Background(), &ExecutionRequest{
+		Message: "grade it", Tools: []copilot.Tool{tool}, NoSkills: true, EphemeralSession: true, SkipWorkspaceCapture: true,
+	})
+	require.NoError(t, err)
+	assert.True(t, resp.Success, resp.ErrorMsg)
+	require.Len(t, calls, 1)
+	assert.Equal(t, "r", calls[0]["reason"])
+	assert.Contains(t, strings.Join(readFakeClaudeArgs(t, logPath), " "), "--no-session-persistence")
+	assert.Nil(t, e.SessionUsage("judge"), "ephemeral sessions are not tracked")
+}
+
+func TestClaudeEngine_ToolPolicyAndEffort(t *testing.T) {
+	e, logPath := newFakeClaudeEngine(t, "ok")
+	resp, err := e.Execute(context.Background(), &ExecutionRequest{
+		Message:         "hi",
+		NoSkills:        true,
+		ReasoningEffort: "high",
+		ToolPolicy:      NewToolPolicy(&[]string{"read"}),
+	})
+	require.NoError(t, err)
+
+	joined := strings.Join(readFakeClaudeArgs(t, logPath), " ")
+	assert.Contains(t, joined, "--tools Glob,Grep,Read")
+	assert.Contains(t, joined, "--effort high")
+
+	// The fake CLI still calls Skill and Write, which the policy forbids.
+	assert.False(t, resp.Success)
+	assert.Equal(t, string(ToolPolicyAllowList), resp.ToolPolicyMode)
+	require.Len(t, resp.ToolPolicyDenials, 2)
+	assert.Equal(t, "Skill", resp.ToolPolicyDenials[0].Tool)
+	assert.Contains(t, resp.ErrorMsg, "tool policy violation")
+}
+
+func TestClaudeEngine_FirstEventTimeout(t *testing.T) {
+	e, _ := newFakeClaudeEngine(t, "hang")
+	start := time.Now()
+	resp, err := e.Execute(context.Background(), &ExecutionRequest{Message: "hi", NoSkills: true, FirstEventTimeout: 300 * time.Millisecond})
+	require.NoError(t, err)
+	assert.False(t, resp.Success)
+	assert.Contains(t, resp.ErrorMsg, "session start timeout")
+	assert.Less(t, time.Since(start), 8*time.Second)
+}
+
+func TestClaudeToolBridge(t *testing.T) {
+	b, err := startClaudeToolBridge([]copilot.Tool{{
+		Name:        "echo",
+		Description: "echoes",
+		Handler: func(inv copilot.ToolInvocation) (copilot.ToolResult, error) {
+			return copilot.ToolResult{TextResultForLLM: "got " + inv.Arguments.(map[string]any)["x"].(string)}, nil
+		},
+	}})
+	require.NoError(t, err)
+	defer b.close()
+
+	post := func(token string, body string) (*http.Response, map[string]any) {
+		req, _ := http.NewRequest(http.MethodPost, b.url, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp, out
+	}
+
+	resp, _ := post("wrong", `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	resp, _ = post(b.token, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+
+	_, out := post(b.token, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
+	assert.Equal(t, "2025-06-18", out["result"].(map[string]any)["protocolVersion"])
+
+	_, out = post(b.token, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	tools := out["result"].(map[string]any)["tools"].([]any)
+	require.Len(t, tools, 1)
+	assert.Equal(t, map[string]any{"type": "object"}, tools[0].(map[string]any)["inputSchema"])
+
+	_, out = post(b.token, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"echo","arguments":{"x":"hi"}}}`)
+	result := out["result"].(map[string]any)
+	assert.Equal(t, false, result["isError"])
+	assert.Equal(t, "got hi", result["content"].([]any)[0].(map[string]any)["text"])
+}
+
+func TestClaudeMCPConfig(t *testing.T) {
+	cfg, err := claudeMCPConfig(map[string]copilot.MCPServerConfig{
+		"local":  copilot.MCPStdioServerConfig{Command: "srv", Args: []string{"-x"}, Env: map[string]string{"A": "1"}, Tools: []string{"*"}},
+		"remote": copilot.MCPHTTPServerConfig{URL: "https://example.test/mcp", Headers: map[string]string{"K": "V"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"type": "stdio", "command": "srv", "args": []string{"-x"}, "env": map[string]string{"A": "1"}}, cfg["local"])
+	assert.Equal(t, map[string]any{"type": "http", "url": "https://example.test/mcp", "headers": map[string]string{"K": "V"}}, cfg["remote"])
+
+	_, err = claudeMCPConfig(map[string]copilot.MCPServerConfig{"bad": copilot.MCPStdioServerConfig{Command: "x", WorkingDirectory: "/tmp"}})
+	assert.ErrorContains(t, err, "cwd")
+}
+
+func TestClaudeToolsForPolicy(t *testing.T) {
+	builtins, allowed := claudeToolsForPolicy(NewToolPolicy(&[]string{}))
+	assert.Equal(t, "", builtins)
+	assert.Empty(t, allowed)
+
+	builtins, allowed = claudeToolsForPolicy(NewToolPolicy(&[]string{"view", "edit", "Bash", "mcp:github", "mcp:docs/search", "custom:my_tool"}))
+	assert.Equal(t, "Bash,Edit,Glob,Grep,NotebookEdit,PowerShell,Read,Write", builtins)
+
+	denials := claudePolicyDenials([]models.ToolCall{
+		{Name: "Read"}, {Name: "mcp__github__create_issue"}, {Name: "mcp__docs__search"},
+		{Name: "mcp__waza__my_tool"}, {Name: "mcp__docs__delete"}, {Name: "WebFetch"},
+	}, allowed)
+	var denied []string
+	for _, d := range denials {
+		denied = append(denied, d.Tool)
+	}
+	assert.Equal(t, []string{"mcp__docs__delete", "WebFetch"}, denied)
 }

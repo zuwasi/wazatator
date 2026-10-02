@@ -324,6 +324,7 @@ func initCommandE(cmd *cobra.Command, args []string, noSkill bool, flagSkillsDir
 						Description("Choose how evals are executed").
 						Options(
 							huh.NewOption("Copilot SDK — real model execution", "copilot-sdk"),
+							huh.NewOption("Claude Code CLI — real model execution via local claude", "claude-cli"),
 							huh.NewOption("Mock — fast iteration, no API calls", "mock"),
 						).
 						Value(&engine),
@@ -332,6 +333,26 @@ func initCommandE(cmd *cobra.Command, args []string, noSkill bool, flagSkillsDir
 
 			if err := engineForm.Run(); err != nil {
 				engine = projectconfig.DefaultEngine
+			}
+
+			if engine == "claude-cli" {
+				model = "sonnet"
+				modelForm := huh.NewForm(
+					huh.NewGroup(
+						huh.NewSelect[string]().
+							Title("Default model").
+							Description("Claude Code model alias used for evaluations").
+							Options(
+								huh.NewOption("sonnet", "sonnet"),
+								huh.NewOption("opus", "opus"),
+								huh.NewOption("haiku", "haiku"),
+							).
+							Value(&model),
+					),
+				).WithInput(cmd.InOrStdin()).WithOutput(out)
+				if err := modelForm.Run(); err != nil {
+					model = "sonnet"
+				}
 			}
 
 			// Model selector (hidden when engine ≠ copilot-sdk)

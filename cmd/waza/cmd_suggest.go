@@ -19,7 +19,7 @@ import (
 )
 
 var newSuggestEngine = func(modelID string) execution.AgentEngine {
-	return execution.NewCopilotEngineBuilder(modelID, nil).Build()
+	return execution.NewAuxiliaryEngine(modelID)
 }
 
 type suggestFlags struct {

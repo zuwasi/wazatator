@@ -22,7 +22,7 @@ import (
 var (
 	// newDevEngine is a test hook for replacing the agent engine in tests
 	newDevEngine = func(modelID string) execution.AgentEngine {
-		return execution.NewCopilotEngineBuilder(modelID, nil).Build()
+		return execution.NewAuxiliaryEngine(modelID)
 	}
 	// startDevSpinner is a test hook for replacing the spinner in tests
 	startDevSpinner = spinner.Start

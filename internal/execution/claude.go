@@ -54,6 +54,26 @@ func NewClaudeEngine(defaultModelID string) *ClaudeEngine {
 	}
 }
 
+// NewAuxiliaryEngine builds the engine for commands outside `waza run`
+// (quality, suggest, spec verify, dev, tokens suggest). Set
+// WAZA_EXECUTOR=claude-cli to use Claude Code instead of the Copilot SDK.
+func NewAuxiliaryEngine(modelID string) AgentEngine {
+	if os.Getenv("WAZA_EXECUTOR") == "claude-cli" {
+		return NewClaudeEngine(modelID)
+	}
+	return NewCopilotEngineBuilder(modelID, nil).Build()
+}
+
+// claudeModelName converts Copilot-style Claude model names
+// ("claude-sonnet-4.6") to Claude Code's form ("claude-sonnet-4-6") so evals
+// and defaults written for copilot-sdk also work with claude-cli.
+func claudeModelName(model string) string {
+	if strings.HasPrefix(model, "claude-") {
+		return strings.ReplaceAll(model, ".", "-")
+	}
+	return model
+}
+
 // SetKeepWorkspace enables or disables workspace preservation on shutdown.
 func (e *ClaudeEngine) SetKeepWorkspace(keep bool) { e.keepWorkspace = keep }
 
@@ -68,15 +88,6 @@ func (e *ClaudeEngine) Initialize(ctx context.Context) error {
 func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*ExecutionResponse, error) {
 	if req == nil {
 		return nil, errors.New("nil req was passed to ClaudeEngine.Execute")
-	}
-	if len(req.Tools) > 0 {
-		return nil, errors.New("claude-cli executor does not support custom tools (used by prompt graders)")
-	}
-	if len(req.MCPServers) > 0 {
-		return nil, errors.New("claude-cli executor does not support MCP servers yet")
-	}
-	if req.ToolPolicy.Active() {
-		return nil, errors.New("claude-cli executor does not support .agent.md tool policies yet")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -131,17 +142,50 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 	args := []string{"-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
 		"--setting-sources", "project,local", "--strict-mcp-config"}
 	if modelID != "" {
-		args = append(args, "--model", modelID)
+		args = append(args, "--model", claudeModelName(modelID))
+	}
+	if req.ReasoningEffort != "" {
+		args = append(args, "--effort", req.ReasoningEffort)
 	}
 	if req.SessionID != "" {
 		args = append(args, "--resume", req.SessionID)
+	} else if req.EphemeralSession {
+		args = append(args, "--no-session-persistence")
 	}
 	if len(systemParts) > 0 {
 		args = append(args, "--append-system-prompt", strings.Join(systemParts, "\n"))
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	var policyAllowed map[string]bool
+	if req.ToolPolicy.Active() {
+		var builtins string
+		builtins, policyAllowed = claudeToolsForPolicy(req.ToolPolicy)
+		args = append(args, "--tools", builtins)
+	}
+
+	mcpServers, err := claudeMCPConfig(req.MCPServers)
+	if err != nil {
+		return nil, err
+	}
+	if len(req.Tools) > 0 {
+		bridge, err := startClaudeToolBridge(req.Tools)
+		if err != nil {
+			return nil, err
+		}
+		defer bridge.close()
+		mcpServers[claudeToolServerName] = bridge.mcpServerConfig()
+	}
+	if len(mcpServers) > 0 {
+		cfgFile, err := writeClaudeMCPConfig(mcpServers)
+		if err != nil {
+			return nil, err
+		}
+		defer os.Remove(cfgFile)
+		args = append(args, "--mcp-config", cfgFile)
+	}
+
+	runCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 
 	cmd := exec.CommandContext(runCtx, e.cliPath, args...)
 	cmd.Dir = workingDir
@@ -149,12 +193,16 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 	cmd.WaitDelay = 5 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	stdout, err := cmd.StdoutPipe()
+	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("claude-cli: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("claude-cli: failed to start %q: %w", e.cliPath, err)
+	}
+	var stdout io.Reader = pipe
+	if req.FirstEventTimeout > 0 {
+		stdout = newFirstOutputWatchdog(pipe, req.FirstEventTimeout, func() { cancel(errFirstEventTimeout) })
 	}
 
 	collector := NewSessionEventsCollector()
@@ -162,7 +210,7 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 	if req.CancelOnSkillInvocation {
 		collector.SetOnSkillInvoked(func(SkillInvocation) {
 			canceledForSkill = true
-			cancel()
+			cancel(nil)
 		})
 	}
 	collector.On(newClaudeEvent(&copilot.UserMessageData{Content: req.Message}))
@@ -174,6 +222,8 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 	switch {
 	case canceledForSkill:
 		errMsg = ""
+	case errors.Is(context.Cause(runCtx), errFirstEventTimeout):
+		errMsg = fmt.Sprintf("session start timeout: no first turn within %s (engine launched but produced no events): %v", req.FirstEventTimeout, errFirstEventTimeout)
 	case ctx.Err() != nil:
 		errMsg = ctx.Err().Error()
 	case errMsg == "" && waitErr != nil:
@@ -207,7 +257,7 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 		e.mu.Unlock()
 	}
 
-	return &ExecutionResponse{
+	resp := &ExecutionResponse{
 		FinalOutput:      joinStrings(collector.OutputParts()),
 		Events:           copilotevents.FromSDK(collector.SessionEvents()),
 		ModelID:          modelID,
@@ -220,7 +270,59 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 		WorkspaceFiles:   workspaceFiles,
 		SessionID:        sessionID,
 		Usage:            stream.usage,
-	}, nil
+	}
+	if req.ToolPolicy != nil {
+		resp.ToolPolicyMode = string(req.ToolPolicy.Mode)
+	}
+	if policyAllowed != nil {
+		if denials := claudePolicyDenials(resp.ToolCalls, policyAllowed); len(denials) > 0 {
+			resp.ToolPolicyDenials = denials
+			if resp.Success {
+				resp.Success = false
+				resp.ErrorMsg = fmt.Sprintf("tool policy violation: %d tool call(s) denied by .agent.md `tools:` policy", len(denials))
+			}
+		}
+	}
+	return resp, nil
+}
+
+// writeClaudeMCPConfig writes servers as a `claude --mcp-config` JSON file
+// (a file avoids Windows command-line quoting issues) and returns its path.
+func writeClaudeMCPConfig(servers map[string]any) (string, error) {
+	data, err := json.Marshal(map[string]any{"mcpServers": servers})
+	if err != nil {
+		return "", fmt.Errorf("claude-cli: encoding mcp config: %w", err)
+	}
+	f, err := os.CreateTemp("", "waza-claude-mcp-*.json")
+	if err != nil {
+		return "", fmt.Errorf("claude-cli: writing mcp config: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(data); err != nil {
+		return "", fmt.Errorf("claude-cli: writing mcp config: %w", err)
+	}
+	return f.Name(), nil
+}
+
+// firstOutputWatchdog calls onTimeout unless the wrapped reader yields data
+// within the timeout; it distinguishes a CLI that never starts its turn from a
+// legitimately long one.
+type firstOutputWatchdog struct {
+	r     io.Reader
+	timer *time.Timer
+	once  sync.Once
+}
+
+func newFirstOutputWatchdog(r io.Reader, timeout time.Duration, onTimeout func()) *firstOutputWatchdog {
+	return &firstOutputWatchdog{r: r, timer: time.AfterFunc(timeout, onTimeout)}
+}
+
+func (w *firstOutputWatchdog) Read(p []byte) (int, error) {
+	n, err := w.r.Read(p)
+	if n > 0 || err != nil {
+		w.once.Do(func() { w.timer.Stop() })
+	}
+	return n, err
 }
 
 // Shutdown removes workspaces and git resources. Safe to call multiple times.

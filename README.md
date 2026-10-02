@@ -1179,6 +1179,33 @@ Remote grader refs use Go-module-style paths: `<host>/<owner>/<repo>[/path][#exp
 
 For custom `.agent.md` targets, `copilot-sdk` enforces the selected agent's `tools:` declaration on initial and resumed turns: omitted means unrestricted, `[]` denies all tools, and a populated list allows only named tools. Runtime enforcement and the implicit `tool_constraint` grader share built-in aliases such as `fileRead`/`readFile`/`view`. Denials fail the run and appear in results, `--session-log` run events, and the dashboard trajectory digest. This is a tool boundary, not host filesystem or network sandboxing. See [custom agent policies](site/src/content/docs/guides/custom-agents.mdx) for MCP names, task overrides, and limitations.
 
+### Claude Code Executor
+
+Set `executor: claude-cli` to run tasks through your local [Claude Code](https://code.claude.com) CLI instead of the Copilot SDK. Waza runs `claude -p --output-format stream-json` in each task workspace and grades the result with the same graders.
+
+```yaml
+config:
+  executor: claude-cli
+  model: sonnet          # any value accepted by `claude --model` (sonnet, opus, haiku, or a full model ID)
+  judge_model: haiku     # prompt graders also run through Claude Code
+  reasoning_effort: high # optional, passed as `claude --effort`
+```
+
+Requirements: Claude Code installed and logged in (`claude`, then `/login`). Set `CLAUDE_CLI_PATH` if `claude` is not on `PATH`.
+
+How it maps to Claude Code:
+
+- **Skills**: the target skill's `SKILL.md` (plus its `scripts/`, `references/`, and `assets/` folders) is copied to `.claude/skills/<name>/` in the workspace so Claude discovers it natively. Calls to Claude's `Skill` tool are reported as skill invocations. These files are excluded from workspace grading.
+- **Isolation**: runs use `--setting-sources project,local --strict-mcp-config`, so personal plugins, user skills, hooks, and claude.ai connectors do not affect scores. Claude Code still reads `CLAUDE.md`/`AGENTS.md` files in parent directories of the workspace; point `TMP`/`TEMP` at a directory outside your home folder if that matters.
+- **Prompt graders and custom tools**: in-process tools (such as `set_waza_grade_pass`) are served to Claude through a local, token-protected MCP server named `waza`.
+- **MCP servers and `mcp_mocks`**: passed with `--mcp-config`; Claude sees tools as `mcp__<server>__<tool>`.
+- **`.agent.md` tool policies**: mapped to `--tools` (`read` → Read/Glob/Grep, `write` → Write/Edit/NotebookEdit, `bash` → Bash/PowerShell, `fetch` → WebFetch). Any call outside the policy fails the run.
+- **Follow-ups and `continue_session`** resume the Claude session with `--resume`.
+
+- **Model names**: Copilot-style Claude names such as `claude-sonnet-4.6` are converted to Claude Code's form (`claude-sonnet-4-6`).
+
+Set `WAZA_EXECUTOR=claude-cli` to also run `waza quality`, `suggest`, `dev`, `tokens suggest`, and `spec verify --semantic` through Claude Code. `waza models` and `waza new task from-prompt` still require Copilot.
+
 ### MCP Mock Servers
 
 Use top-level `mcp_mocks` with `schemaVersion: "1.1"` for deterministic Copilot SDK evals that need MCP tools without live services. Waza launches each mock as a local stdio MCP server, so CI runs do not need network ports, external credentials, or real service state. Waza exposes every tool declared by each mock to the Copilot CLI automatically; do not add a separate `tools` allowlist.

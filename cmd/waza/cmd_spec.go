@@ -18,7 +18,7 @@ import (
 )
 
 var newSpecVerifyEngine = func(modelID string) execution.AgentEngine {
-	return execution.NewCopilotEngineBuilder(modelID, nil).Build()
+	return execution.NewAuxiliaryEngine(modelID)
 }
 
 type specVerifyFlags struct {

@@ -480,8 +480,8 @@ func (s *EvalSpec) Validate() error {
 	if !ValidReasoningEffort(s.Config.JudgeReasoningEffort) {
 		return fmt.Errorf("judge_reasoning_effort must be one of low, medium, high, xhigh, or max, got %q", s.Config.JudgeReasoningEffort)
 	}
-	if s.Config.EngineType != "copilot-sdk" && (s.Config.ReasoningEffort != "" || s.Config.JudgeReasoningEffort != "") {
-		return fmt.Errorf("reasoning_effort and judge_reasoning_effort require executor copilot-sdk")
+	if !supportsReasoningEffort(s.Config.EngineType) && (s.Config.ReasoningEffort != "" || s.Config.JudgeReasoningEffort != "") {
+		return fmt.Errorf("reasoning_effort and judge_reasoning_effort require executor copilot-sdk or claude-cli")
 	}
 	for _, g := range s.Graders {
 		if err := validateGraderReasoningEffort(g.Identifier, g.Parameters, s.Config.EngineType); err != nil {
@@ -540,10 +540,14 @@ func validateGraderReasoningEffort(name string, parameters GraderParameters, exe
 	if !ValidReasoningEffort(params.ReasoningEffort) {
 		return fmt.Errorf("prompt grader %q: reasoning_effort must be one of low, medium, high, xhigh, or max, got %q", name, params.ReasoningEffort)
 	}
-	if executor != "copilot-sdk" && params.ReasoningEffort != "" {
-		return fmt.Errorf("prompt grader %q: reasoning_effort requires executor copilot-sdk", name)
+	if !supportsReasoningEffort(executor) && params.ReasoningEffort != "" {
+		return fmt.Errorf("prompt grader %q: reasoning_effort requires executor copilot-sdk or claude-cli", name)
 	}
 	return nil
+}
+
+func supportsReasoningEffort(executor string) bool {
+	return executor == "copilot-sdk" || executor == "claude-cli"
 }
 
 // ResolveTestFiles expands glob patterns to actual test files

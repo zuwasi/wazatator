@@ -110,7 +110,7 @@
           "config": {
             "required": ["executor"],
             "properties": {
-              "executor": { "not": { "const": "copilot-sdk" } }
+              "executor": { "not": { "enum": ["copilot-sdk", "claude-cli"] } }
             }
           }
         }
@@ -267,7 +267,7 @@
           },
           "then": {
             "properties": {
-              "executor": { "const": "copilot-sdk" }
+              "executor": { "enum": ["copilot-sdk", "claude-cli"] }
             }
           }
         }

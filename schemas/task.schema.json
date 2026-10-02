@@ -1179,7 +1179,7 @@
         "reasoning_effort": {
           "type": "string",
           "enum": ["low", "medium", "high", "xhigh", "max"],
-          "description": "Override the eval judge_reasoning_effort; requires executor copilot-sdk."
+          "description": "Override the eval judge_reasoning_effort; requires executor copilot-sdk or claude-cli."
         },
         "continue_session": {
           "type": "boolean",
