@@ -1,0 +1,59 @@
+name: Wazatator Release
+
+# Builds the standalone wazatator CLI for every supported platform and
+# publishes a GitHub Release with checksums.txt (the format install.sh and
+# install.ps1 expect). One job and one LFS checkout keep LFS bandwidth low.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release (e.g. v0.1.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          lfs: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./internal/execution/ ./internal/scaffold/ ./internal/models/
+
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          VERSION="${TAG#v}"
+          mkdir dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            name="wazatator-${os}-${arch}"
+            [ "$os" = windows ] && name="${name}.exe"
+            echo "Building $name"
+            GOOS="$os" GOARCH="$arch" go build -ldflags "-X main.version=${VERSION}" -o "dist/${name}" ./cmd/waza
+          done
+          cd dist && sha256sum * > checksums.txt && cat checksums.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Wazatator $TAG" \
+            --notes "Standalone wazatator CLI. Install with the commands in the README. Based on Microsoft Waza (MIT); not affiliated with Microsoft."
