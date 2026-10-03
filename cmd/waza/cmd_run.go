@@ -65,6 +65,7 @@ var (
 	modelOverrides  []string
 	recommendFlag   bool
 	baselineFlag    bool
+	skillLibraries  []string
 	suggestFlag     bool
 	sessionLog      bool
 	sessionDir      string
@@ -162,6 +163,7 @@ You can also specify a skill name to run its eval:
 	cmd.Flags().StringArrayVar(&modelOverrides, "model", nil, "Model to use (overrides spec config, can be repeated for comparison)")
 	cmd.Flags().BoolVar(&recommendFlag, "recommend", false, "Generate heuristic recommendation after multi-model run")
 	cmd.Flags().BoolVar(&baselineFlag, "baseline", false, "Run A/B comparison: with skills vs without skills")
+	cmd.Flags().StringArrayVar(&skillLibraries, "skill-library", nil, "Load another skill folder (or a folder of skills) next to the target so they compete for prompts; reports collisions (can be repeated)")
 	cmd.Flags().BoolVar(&suggestFlag, "suggest", false, "Generate a Copilot report suggesting skill improvements based on test outcomes")
 	cmd.Flags().BoolVar(&sessionLog, "session-log", false, "Enable session event logging (NDJSON)")
 	cmd.Flags().StringVar(&sessionDir, "session-dir", "", "Directory for session log files (default: current directory)")
@@ -601,6 +603,16 @@ func runCommandForSpec(cmd *cobra.Command, sp skillSpecPath, defaultSkills []str
 	}
 	if noSkillsFlag {
 		spec.Config.DisabledSkills = []string{"*"}
+	}
+	for _, lib := range skillLibraries {
+		dir, err := expandSkillLibrary(lib)
+		if err != nil {
+			return nil, err
+		}
+		spec.Config.SkillPaths = append(spec.Config.SkillPaths, dir)
+	}
+	if len(skillLibraries) > 0 && spec.Config.TriggerSkillRouting {
+		fmt.Println("[WARN] trigger_skill_routing names the target skill to the agent, which hides collisions with --skill-library skills. Turn it off for a realistic collision test.")
 	}
 	if judgeModel != "" {
 		spec.Config.JudgeModel = judgeModel
@@ -1406,6 +1418,14 @@ func printSummary(outcome *models.EvaluationOutcome) {
 		}
 		fmt.Printf("  Precision: %.1f%%  Recall: %.1f%%  F1: %.1f%%\n", m.Precision*100, m.Recall*100, m.F1*100)
 		fmt.Printf("  TP: %d  FP: %d  FN: %d  TN: %d\n", m.TP, m.FP, m.FN, m.TN)
+		if m.Collisions > 0 {
+			fmt.Printf("  Collisions: %d prompt(s) went to another skill instead of %s:\n", m.Collisions, outcome.SkillTested)
+			for _, r := range outcome.TriggerResults {
+				if r.ShouldTrigger && !r.DidTrigger && len(r.OtherSkills) > 0 {
+					fmt.Printf("    - %q -> %s\n", r.Prompt, strings.Join(r.OtherSkills, ", "))
+				}
+			}
+		}
 		fmt.Println()
 	}
 
@@ -2160,4 +2180,24 @@ func runDiscoverMode(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Results: %d skills evaluated, %d passed, %d failed\n", len(allSkillResults), passed, failed)
 
 	return lastErr
+}
+
+// expandSkillLibrary turns a --skill-library value into an absolute directory,
+// expanding a leading ~ to the home directory.
+func expandSkillLibrary(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("--skill-library %q: %w", path, err)
+		}
+		path = filepath.Join(home, path[1:])
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("--skill-library %q: %w", path, err)
+	}
+	if info, err := os.Stat(abs); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("--skill-library %q is not a directory", path)
+	}
+	return abs, nil
 }

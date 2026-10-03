@@ -522,3 +522,42 @@ func TestMergeBaselineOutcomes_Success(t *testing.T) {
 	assert.InDelta(t, 0.333, task2.SkillImpact.PassRateBaseline, 0.001)
 	assert.InDelta(t, 0.667, task2.SkillImpact.Delta, 0.001)
 }
+
+// TestBaselinePassDisablesSkills: the without-skill pass must load no skills
+// even when the target skill is found from the current directory.
+func TestBaselinePassDisablesSkills(t *testing.T) {
+	spec := &models.EvalSpec{
+		SpecIdentity: models.SpecIdentity{Name: "test-eval"},
+		SkillName:    "my-skill",
+		Config:       models.Config{EngineType: "mock", ModelID: "gpt-4", TimeoutSec: 60},
+	}
+	runner := NewEvalRunner(config.NewEvalConfig(spec), nil)
+	tc := &models.TestCase{TestID: "t1", Stimulus: models.TaskStimulus{Message: "hi"}}
+
+	req, err := runner.buildExecutionRequest(tc)
+	require.NoError(t, err)
+	assert.False(t, req.NoSkills)
+
+	runner.forceNoSkills = true
+	req, err = runner.buildExecutionRequest(tc)
+	require.NoError(t, err)
+	assert.True(t, req.NoSkills)
+}
+
+// TestGradersPassed_SkillInvocationIsIndicatorInBaseline mirrors claude plugin
+// eval: a skill-invocation grader can never pass without the skill, so in A/B
+// mode it must not decide pass/fail in either arm.
+func TestGradersPassed_SkillInvocationIsIndicatorInBaseline(t *testing.T) {
+	results := map[string]models.GraderResults{
+		"output":     {Type: models.GraderKindText, Passed: true},
+		"used-skill": {Type: models.GraderKindSkillInvocation, Passed: false},
+	}
+	runner := NewEvalRunner(config.NewEvalConfig(&models.EvalSpec{}), nil)
+	assert.False(t, runner.gradersPassed(results))
+
+	runner.baselineMode = true
+	assert.True(t, runner.gradersPassed(results))
+
+	results["output"] = models.GraderResults{Type: models.GraderKindText, Passed: false}
+	assert.False(t, runner.gradersPassed(results))
+}

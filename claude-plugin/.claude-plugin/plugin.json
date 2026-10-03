@@ -1,7 +1,7 @@
 {
   "name": "wazatator",
   "displayName": "Wazatator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Evaluate Agent Skills with Claude Code: scaffold eval suites, run them, score the results, and fix what fails",
   "author": {
     "name": "Daniel Liezrowice"

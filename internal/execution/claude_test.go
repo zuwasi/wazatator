@@ -172,9 +172,9 @@ func TestInstallClaudeSkill_CopiesOnlySkillContent(t *testing.T) {
 	}
 	ws := t.TempDir()
 
-	rel, err := installClaudeSkill([]string{root}, "pirate-greeter", ws, ws)
+	rel, err := installClaudeSkills([]string{root}, "pirate-greeter", nil, ws, ws)
 	require.NoError(t, err)
-	assert.Equal(t, ".claude/skills/pirate-greeter", rel)
+	assert.Equal(t, ".claude/skills", rel)
 
 	dst := filepath.Join(ws, ".claude", "skills", "pirate-greeter")
 	assert.FileExists(t, filepath.Join(dst, "SKILL.md"))
@@ -182,6 +182,32 @@ func TestInstallClaudeSkill_CopiesOnlySkillContent(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dst, "references", "guide.md"))
 	assert.NoDirExists(t, filepath.Join(dst, "tasks"))
 	assert.NoFileExists(t, filepath.Join(dst, "results.json"))
+}
+
+// A skill library competes with the target: every library skill is installed,
+// but the target wins a name clash.
+func TestInstallClaudeSkills_InstallsLibraryNextToTarget(t *testing.T) {
+	target := writePirateSkill(t)
+	library := t.TempDir()
+	write := func(dir, content string) {
+		require.NoError(t, os.MkdirAll(filepath.Join(library, dir), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(library, dir, "SKILL.md"), []byte(content), 0o644))
+	}
+	write("greeter", "---\nname: generic-greeter\ndescription: Greets anyone.\n---\nSay hello.\n")
+	write("pirate-copy", "---\nname: pirate-greeter\ndescription: Library copy.\n---\nLIBRARY COPY\n")
+	write("odd", "---\nname: \"plugin:odd name\"\ndescription: Unsafe folder name.\n---\nOdd.\n")
+	ws := t.TempDir()
+
+	rel, err := installClaudeSkills([]string{target}, "pirate-greeter", []string{library}, ws, ws)
+	require.NoError(t, err)
+	assert.Equal(t, ".claude/skills", rel)
+
+	skills := filepath.Join(ws, ".claude", "skills")
+	assert.FileExists(t, filepath.Join(skills, "generic-greeter", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(skills, "odd", "SKILL.md"), "unsafe names fall back to the folder name")
+	body, err := os.ReadFile(filepath.Join(skills, "pirate-greeter", "SKILL.md"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "LIBRARY COPY", "the target must win a name clash")
 }
 
 func TestClaudeModelName(t *testing.T) {

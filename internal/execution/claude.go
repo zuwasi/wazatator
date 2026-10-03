@@ -122,7 +122,7 @@ func (e *ClaudeEngine) Execute(ctx context.Context, req *ExecutionRequest) (*Exe
 			skillDirs = []string{req.SourceDir, cwd}
 		}
 		skillDirs = append(skillDirs, req.SkillPaths...)
-		if skillCopyRel, err = installClaudeSkill(skillDirs, req.SkillName, workspaceDir, workingDir); err != nil {
+		if skillCopyRel, err = installClaudeSkills(skillDirs, req.SkillName, req.SkillPaths, workspaceDir, workingDir); err != nil {
 			return nil, err
 		}
 		if msg := buildSkillSystemMessage(skillDirs, req.SkillName, !req.SuppressSkillBody); msg != "" {
@@ -380,41 +380,102 @@ func (e *ClaudeEngine) setupWorkspace(ctx context.Context, resources []ResourceF
 	return workspaceDir, nil
 }
 
-// installClaudeSkill copies the target SKILL.md directory into
-// <workingDir>/.claude/skills/<name> so Claude Code discovers it as a project
-// skill. It returns the copy's workspace-relative slash path ("" when nothing
-// was installed) so callers can exclude it from captured workspace files.
-func installClaudeSkill(skillDirs []string, skillName, workspaceDir, workingDir string) (string, error) {
-	sd, err := findSkillDefinition(skillDirs, skillName)
-	if err != nil || sd == nil || filepath.Base(sd.Path) != "SKILL.md" {
-		return "", err
-	}
-	dst := filepath.Join(workingDir, ".claude", "skills", sd.Name)
-	rel, err := filepath.Rel(workspaceDir, dst)
+// installClaudeSkills copies the target skill, then every other skill found in
+// libraryDirs (each a skill folder or a folder of skill folders), into
+// <workingDir>/.claude/skills so Claude Code discovers them as project skills.
+// Library skills compete with the target, which is how collisions are found.
+// It returns the skills root as a workspace-relative slash path ("" when
+// nothing was installed) so callers can exclude it from captured files.
+func installClaudeSkills(skillDirs []string, skillName string, libraryDirs []string, workspaceDir, workingDir string) (string, error) {
+	root := filepath.Join(workingDir, ".claude", "skills")
+	rel, err := filepath.Rel(workspaceDir, root)
 	if err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(dst); err == nil {
-		return filepath.ToSlash(rel), nil // follow-up turn reusing the workspace
+	var skills []*skillDefinition
+	target, err := findSkillDefinition(skillDirs, skillName)
+	if err != nil {
+		return "", err
 	}
+	if target != nil && filepath.Base(target.Path) == "SKILL.md" {
+		skills = append(skills, target)
+	}
+	for _, dir := range libraryDirs {
+		skills = append(skills, listSkillDefinitions(dir)...)
+	}
+	if len(skills) == 0 {
+		return "", nil
+	}
+	for _, sd := range skills {
+		// First copy wins: the target beats a same-named library skill, and a
+		// follow-up turn reuses what the first turn installed.
+		dst := filepath.Join(root, claudeSkillDirName(sd))
+		if _, err := os.Stat(dst); err == nil {
+			continue
+		}
+		if err := copyClaudeSkill(sd, dst); err != nil {
+			return "", err
+		}
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+// listSkillDefinitions returns the SKILL.md skill in dir, or the SKILL.md
+// skills in its non-hidden subdirectories.
+func listSkillDefinitions(dir string) []*skillDefinition {
+	if sd, err := loadSkillDefinitionChecked(dir); err == nil && sd != nil && filepath.Base(sd.Path) == "SKILL.md" {
+		return []*skillDefinition{sd}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []*skillDefinition
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		sd, err := loadSkillDefinitionChecked(filepath.Join(dir, e.Name()))
+		if err == nil && sd != nil && filepath.Base(sd.Path) == "SKILL.md" {
+			out = append(out, sd)
+		}
+	}
+	return out
+}
+
+// claudeSkillDirName is the folder name for a skill under .claude/skills: its
+// frontmatter name when that is a safe folder name, otherwise its folder.
+func claudeSkillDirName(sd *skillDefinition) string {
+	for _, r := range sd.Name {
+		if !(r == '-' || r == '_' || r == '.' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			return filepath.Base(sd.Dir)
+		}
+	}
+	if sd.Name == "" {
+		return filepath.Base(sd.Dir)
+	}
+	return sd.Name
+}
+
+// copyClaudeSkill writes SKILL.md and the optional Agent Skills folders, not
+// eval artifacts (tasks, fixtures, results) that often live next to SKILL.md.
+func copyClaudeSkill(sd *skillDefinition, dst string) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return "", fmt.Errorf("creating claude skills dir: %w", err)
+		return fmt.Errorf("creating claude skills dir: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(dst, "SKILL.md"), []byte(sd.Content), 0o644); err != nil {
-		return "", fmt.Errorf("copying skill %q into workspace: %w", sd.Name, err)
+		return fmt.Errorf("copying skill %q into workspace: %w", sd.Name, err)
 	}
-	// Copy only the optional Agent Skills directories, not eval artifacts
-	// (tasks, fixtures, results) that often live next to SKILL.md.
 	for _, sub := range []string{"scripts", "references", "assets"} {
 		src := filepath.Join(sd.Dir, sub)
 		if info, err := os.Stat(src); err != nil || !info.IsDir() {
 			continue
 		}
 		if err := os.CopyFS(filepath.Join(dst, sub), os.DirFS(src)); err != nil {
-			return "", fmt.Errorf("copying skill %q %s: %w", sd.Name, sub, err)
+			return fmt.Errorf("copying skill %q %s: %w", sd.Name, sub, err)
 		}
 	}
-	return filepath.ToSlash(rel), nil
+	return nil
 }
 
 // claudeStreamResult holds the session-level data extracted from the stream.

@@ -41,6 +41,7 @@ type task struct {
 
 type taskResult struct {
 	triggered  bool
+	others     []string // other skills invoked (collisions when the target should have fired)
 	response   string
 	transcript []models.TranscriptEvent
 	toolCalls  []models.ToolCall
@@ -90,8 +91,15 @@ func (r *Runner) RunDetailed(ctx context.Context) ([]models.TriggerResult, *mode
 			triggered := slices.ContainsFunc(resp.SkillInvocations, func(si execution.SkillInvocation) bool {
 				return si.Name == r.spec.Skill
 			})
+			var others []string
+			for _, si := range resp.SkillInvocations {
+				if si.Name != r.spec.Skill && !slices.Contains(others, si.Name) {
+					others = append(others, si.Name)
+				}
+			}
 			outcomes[i] = taskResult{
 				triggered:  triggered,
+				others:     others,
 				response:   resp.FinalOutput,
 				transcript: transcript.BuildFromSessionEvents(copilotevents.ToSDK(resp.Events)),
 				toolCalls:  resp.ToolCalls,
@@ -152,6 +160,7 @@ func (r *Runner) RunDetailed(ctx context.Context) ([]models.TriggerResult, *mode
 			Confidence:    t.confidence,
 			DidTrigger:    o.triggered,
 			ShouldTrigger: t.shouldTrigger,
+			OtherSkills:   o.others,
 			FinalOutput:   o.response,
 			Transcript:    o.transcript,
 			ToolCalls:     o.toolCalls,

@@ -68,6 +68,13 @@ type EvalRunner struct {
 	// Skip grading (execution only)
 	skipGraders bool
 
+	// baselineMode is set during a --baseline A/B comparison. Skill-invocation
+	// graders become indicators only, because they can never pass without the
+	// skill and would inflate the measured impact.
+	baselineMode bool
+	// forceNoSkills disables every skill for the baseline (without-skill) pass.
+	forceNoSkills bool
+
 	// Lifecycle hooks
 	hookRunner *hooks.Runner
 
@@ -405,15 +412,32 @@ func (r *EvalRunner) runNormalBenchmark(ctx context.Context) (*models.Evaluation
 	return outcome, nil
 }
 
+// gradersPassed reports whether every scored grader passed. In baseline (A/B)
+// mode skill_invocation graders are indicators only: they can never pass
+// without the skill, so scoring them would inflate the measured impact.
+func (r *EvalRunner) gradersPassed(results map[string]models.GraderResults) bool {
+	for _, v := range results {
+		if r.baselineMode && v.Type == models.GraderKindSkillInvocation {
+			continue
+		}
+		if !v.Passed {
+			return false
+		}
+	}
+	return true
+}
+
 // runBaselineComparison orchestrates A/B testing: skills-enabled vs skills-disabled
 func (r *EvalRunner) runBaselineComparison(ctx context.Context) (*models.EvaluationOutcome, error) {
 	spec := r.cfg.Spec()
 
-	// Validation: eval must have skills configured
-	if len(spec.Config.SkillPaths) == 0 && len(spec.Config.RequiredSkills) == 0 {
-		fmt.Println("[WARN] --baseline specified but eval has no skills configured (skill_directories, required_skills empty). Skipping baseline comparison.")
+	// Validation: eval must target a skill or have skills configured
+	if spec.SkillName == "" && len(spec.Config.SkillPaths) == 0 && len(spec.Config.RequiredSkills) == 0 {
+		fmt.Println("[WARN] --baseline specified but eval has no skills configured (skill, skill_directories, required_skills empty). Skipping baseline comparison.")
 		return r.runNormalBenchmark(ctx)
 	}
+	r.baselineMode = true
+	defer func() { r.baselineMode = false }()
 
 	// PASS 1: Skills-Enabled
 	fmt.Println("\n════════════════════════════════════════════════════════════════")
@@ -429,9 +453,11 @@ func (r *EvalRunner) runBaselineComparison(ctx context.Context) (*models.Evaluat
 	savedRequiredSkills := spec.Config.RequiredSkills
 	spec.Config.SkillPaths = []string{}
 	spec.Config.RequiredSkills = []string{}
+	r.forceNoSkills = true
 	defer func() {
 		spec.Config.SkillPaths = savedSkillPaths
 		spec.Config.RequiredSkills = savedRequiredSkills
+		r.forceNoSkills = false
 	}()
 
 	fmt.Println("\n════════════════════════════════════════════════════════════════")
@@ -445,6 +471,7 @@ func (r *EvalRunner) runBaselineComparison(ctx context.Context) (*models.Evaluat
 	// Restore skills before merging
 	spec.Config.SkillPaths = savedSkillPaths
 	spec.Config.RequiredSkills = savedRequiredSkills
+	r.forceNoSkills = false
 
 	// PASS 3: Compare and merge results
 	return r.mergeBaselineOutcomes(outcomesWithSkills, outcomesWithoutSkills)
@@ -1007,8 +1034,9 @@ func (r *EvalRunner) runTest(ctx context.Context, tc *models.TestCase, testNum, 
 	})
 	defer taskSpan.End()
 
-	// Check cache if enabled
-	if r.cache != nil {
+	// Check cache if enabled (not in baseline mode: both passes share a cache
+	// key but must run with and without skills)
+	if r.cache != nil && !r.baselineMode {
 		cacheKey, err := cache.CacheKey(spec, tc, r.cfg.FixtureDir())
 		if err == nil {
 			if cachedOutcome, found := r.cache.Get(cacheKey); found {
@@ -1300,13 +1328,8 @@ func (r *EvalRunner) executeRun(ctx context.Context, tc *models.TestCase, runNum
 		status = models.StatusError
 	} else if r.skipGraders {
 		status = models.StatusSkipped
-	} else {
-		for _, v := range gradersResults {
-			if !v.Passed {
-				status = models.StatusFailed
-				break
-			}
-		}
+	} else if !r.gradersPassed(gradersResults) {
+		status = models.StatusFailed
 	}
 
 	// Surface checkpoint failures in the run status even when graders are
@@ -1489,7 +1512,7 @@ func (r *EvalRunner) buildExecutionRequest(tc *models.TestCase) (*execution.Exec
 
 	spec := r.cfg.Spec()
 	resolvedSkillPaths := r.taskSkillPaths(tc)
-	noSkills := spec.Config.AllSkillsDisabled()
+	noSkills := spec.Config.AllSkillsDisabled() || r.forceNoSkills
 	_, fm, err := r.resolveTaskAgent(tc)
 	if err != nil {
 		return nil, err
@@ -1527,7 +1550,7 @@ func (r *EvalRunner) taskSkillPaths(tc *models.TestCase) []string {
 }
 
 func (r *EvalRunner) resolveTaskAgent(tc *models.TestCase) (string, *skill.AgentFrontmatter, error) {
-	if r.cfg.Spec().Config.AllSkillsDisabled() {
+	if r.cfg.Spec().Config.AllSkillsDisabled() || r.forceNoSkills {
 		return "", nil, nil
 	}
 	cwd, err := os.Getwd()

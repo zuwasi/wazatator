@@ -1208,7 +1208,41 @@ How it maps to Claude Code:
 
 - **Model names**: Copilot-style Claude names such as `claude-sonnet-4.6` are converted to Claude Code's form (`claude-sonnet-4-6`).
 
-Set `WAZA_EXECUTOR=claude-cli` to also run `waza quality`, `suggest`, `dev`, `tokens suggest`, and `spec verify --semantic` through Claude Code. `waza models` and `waza new task from-prompt` still require Copilot.
+`wazatator quality`, `suggest`, `dev`, `tokens suggest`, and `spec verify --semantic` also run through Claude Code by default; set `WAZA_EXECUTOR=copilot-sdk` to use the Copilot SDK. `waza models` and `waza new task from-prompt` still require Copilot.
+
+### Measure What a Skill Adds (`--baseline`)
+
+`--baseline` runs every task twice, with the skill and with all skills turned off, and reports the difference per task:
+
+```text
+SKILL IMPACT ANALYSIS
+  With Skills:    100.0% (2/2 tasks passed)
+  Without Skills: 50.0% (1/2 tasks passed)
+  Impact:         +50.0 percentage points
+  - Explain factorial.py           [NEUTRAL]   100% -> 100% (+0pp)
+  - Explain Python Recursion       [IMPROVED]  0% -> 100% (+100pp)
+```
+
+A task that passes without the skill tells you the skill isn't what made it pass. In this mode `skill_invocation` graders are reported but don't decide pass/fail in either pass, because they can never pass without the skill. The result cache is skipped so both passes really run.
+
+### Skill Collision Testing (`--skill-library`)
+
+By default the target skill runs alone. `--skill-library <dir>` loads other skills next to it (a skill folder, or a folder of skills such as `~/.claude/skills`) so they compete for the same prompts, the way they do on a real machine:
+
+```bash
+wazatator run eval.yaml --skill-library ~/.claude/skills
+```
+
+Trigger tests then report prompts that another skill took instead of the target:
+
+```text
+TRIGGER ACCURACY
+  Precision: 100.0%  Recall: 33.3%  F1: 50.0%
+  Collisions: 1 prompt(s) went to another skill instead of code-explainer:
+    - "Walk me through this JavaScript: const x = [1,2].map(a => a*2)" -> js-helper
+```
+
+`results.json` records `other_skills` per trigger prompt and `trigger_metrics.collisions`. Turn off `trigger_skill_routing` for collision tests: it names the target skill to the agent and hides collisions. `--skill-library` can be repeated; for Copilot runs the folders are passed as skill directories.
 
 ### MCP Mock Servers
 

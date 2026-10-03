@@ -212,3 +212,18 @@ func TestComputeTriggerMetrics(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeTriggerMetrics_Collisions(t *testing.T) {
+	m := ComputeTriggerMetrics([]TriggerResult{
+		{Prompt: "a", ShouldTrigger: true, DidTrigger: true},
+		{Prompt: "b", ShouldTrigger: true, DidTrigger: false, OtherSkills: []string{"rival"}},
+		{Prompt: "c", ShouldTrigger: true, DidTrigger: false},
+		{Prompt: "d", ShouldTrigger: false, DidTrigger: false, OtherSkills: []string{"rival"}}, // correct routing
+	})
+	if m.Collisions != 1 {
+		t.Fatalf("collisions = %d, want 1", m.Collisions)
+	}
+	if m.FN != 2 || m.TP != 1 || m.TN != 1 {
+		t.Fatalf("unexpected confusion matrix: %+v", m)
+	}
+}

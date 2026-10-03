@@ -33,6 +33,11 @@ wazatator run <eval.yaml> -o <eval-dir>/results.json
 
 Add `--context-dir <dir>` when the tasks reference fixture files outside the default `fixtures/` folder. Runs take minutes: use a 10-minute timeout or run it in the background.
 
+Two optional modes, when the user asks for them:
+
+- **What does the skill add?** Add `--baseline`. Every task also runs with all skills off, and the report shows the per-task difference. A task that passes without the skill isn't evidence the skill helps.
+- **Does it clash with my other skills?** Add `--skill-library <dir>` (for example `~/.claude/skills`), repeatable. Those skills compete for the same prompts, and trigger tests list prompts another skill took. Make sure `trigger_skill_routing` is off in `eval.yaml` for this.
+
 ## 4. Explain the results
 
 Read `results.json` and report:

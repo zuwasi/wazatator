@@ -13,6 +13,9 @@ type TriggerMetrics struct {
 	Recall    float64 `json:"recall"`
 	F1        float64 `json:"f1"`
 	Accuracy  float64 `json:"accuracy"`
+	// Collisions counts should-trigger prompts that another skill handled
+	// instead of the target (only possible when competing skills are loaded).
+	Collisions int `json:"collisions,omitempty"`
 }
 
 // TriggerResult pairs an expected trigger label with the actual outcome.
@@ -21,6 +24,7 @@ type TriggerResult struct {
 	Confidence    string            `json:"confidence,omitempty"`
 	ShouldTrigger bool              `json:"should_trigger"`
 	DidTrigger    bool              `json:"did_trigger"`
+	OtherSkills   []string          `json:"other_skills,omitempty"`
 	ErrorMsg      string            `json:"error_msg,omitempty"`
 	FinalOutput   string            `json:"final_output,omitempty"`
 	Transcript    []TranscriptEvent `json:"transcript,omitempty"`
@@ -38,9 +42,12 @@ func ComputeTriggerMetrics(results []TriggerResult) *TriggerMetrics {
 	}
 
 	// Track actual counts for display and weighted values for scoring.
-	var tpCount, fpCount, tnCount, fnCount int
+	var tpCount, fpCount, tnCount, fnCount, collisions int
 	var tpW, fpW, tnW, fnW float64
 	for _, r := range results {
+		if r.ShouldTrigger && !r.DidTrigger && len(r.OtherSkills) > 0 {
+			collisions++
+		}
 		w := triggerConfidenceWeight(r.Confidence)
 		switch {
 		case r.ShouldTrigger && r.DidTrigger:
@@ -70,7 +77,7 @@ func ComputeTriggerMetrics(results []TriggerResult) *TriggerMetrics {
 
 	accuracy := triggerSafeDivide(tpW+tnW, total)
 
-	return &TriggerMetrics{
+	m := &TriggerMetrics{
 		TP:        tpCount,
 		FP:        fpCount,
 		TN:        tnCount,
@@ -80,6 +87,8 @@ func ComputeTriggerMetrics(results []TriggerResult) *TriggerMetrics {
 		F1:        triggerRoundTo4(f1),
 		Accuracy:  triggerRoundTo4(accuracy),
 	}
+	m.Collisions = collisions
+	return m
 }
 
 func triggerConfidenceWeight(c string) float64 {
