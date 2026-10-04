@@ -4,7 +4,7 @@ Evaluate AI agent skills with **Claude Code**: scaffold eval suites, run benchma
 
 > Wazatator is a fork of [Microsoft Waza](https://github.com/microsoft/waza) (MIT License) that adds a Claude Code executor (`executor: claude-cli`, the default) and a Claude Code plugin. It is not affiliated with or endorsed by Microsoft. Upstream copyright notices are kept in [LICENSE](LICENSE). The CLI binary is `wazatator`; command examples below that say `waza` work the same with `wazatator`.
 
-**Claude Code plugin:** `/plugin marketplace add zuwasi/wazatator`, then `/plugin install wazatator@wazatator`. See [claude-plugin/README.md](claude-plugin/README.md).
+**Claude Code plugin:** `/plugin marketplace add zuwasi/wazatator-plugin`, then `/plugin install wazatator@wazatator`. The plugin lives in its own repository: https://github.com/zuwasi/wazatator-plugin
 
 📖 **[Getting Started / Docs](https://microsoft.github.io/waza/)**
 
