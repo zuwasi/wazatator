@@ -8,8 +8,8 @@
     {
       "name": "wazatator",
       "source": {
-        "source": "github",
-        "repo": "zuwasi/wazatator-plugin"
+        "source": "url",
+        "url": "https://github.com/zuwasi/wazatator-plugin.git"
       },
       "description": "Run eval suites, quality checks, and trigger tests for your Agent Skills through Claude Code, then fix what fails"
     }
