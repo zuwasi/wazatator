@@ -650,3 +650,29 @@ func TestContextDependentAntiTriggerRisk_NoWarningWhenPresent(t *testing.T) {
 		require.NotEqual(t, "anti-trigger-risk", iss.Rule)
 	}
 }
+
+func TestHeuristicScorer_WhenToApplySections(t *testing.T) {
+	sk := mkSkill("misra", strings.Repeat("Analyzes C code for MISRA compliance. ", 5))
+	sk.Body = "## When to Apply\nAny MISRA C:2023 question.\n\n## When NOT to Apply\nAUTOSAR or CERT questions."
+	r := HeuristicScorer{}.Score(sk)
+	require.True(t, r.HasTriggers, "a 'When to Apply' section counts as triggers")
+	require.True(t, r.HasAntiTriggers, "a 'When NOT to Apply' section counts as anti-triggers")
+}
+
+func TestHeuristicScorer_ConcisenessWarnings(t *testing.T) {
+	sk := mkSkill("big", strings.Repeat("Explains code in plain language. ", 6))
+	sk.Body = strings.Repeat("A line of guidance.\n", 200) + strings.Repeat("```bash\nls\n```\n", 12)
+	r := HeuristicScorer{}.Score(sk)
+	rules := map[string]string{}
+	for _, is := range r.Issues {
+		rules[is.Rule] = is.Severity
+	}
+	require.Equal(t, "warning", rules["skill-too-long"])
+	require.Equal(t, "warning", rules["low-level-steps"])
+
+	small := mkSkill("small", strings.Repeat("Explains code in plain language. ", 6))
+	small.Body = "Explain the code briefly.\n```bash\nls\n```"
+	for _, is := range (HeuristicScorer{}).Score(small).Issues {
+		require.NotContains(t, []string{"skill-too-long", "low-level-steps"}, is.Rule)
+	}
+}

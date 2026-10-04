@@ -57,6 +57,10 @@ type comparisonReport struct {
 	// schemaVersion 1.1 (issue #366). Files that don't include tool_events
 	// produce zero values, which is safe for delta math.
 	ToolMetrics []toolMetrics `json:"tool_metrics"`
+
+	// Significance is a paired-bootstrap test of the pass-rate change from the
+	// first to the last file, over tasks present in both.
+	Significance *models.DeltaStats `json:"significance,omitempty"`
 }
 
 // toolMetrics aggregates tool-use stats across all tasks in one outcome file.
@@ -114,6 +118,8 @@ func buildComparisonReport(files []string, outcomes []*models.EvaluationOutcome)
 	report.AggScoreDelta = report.AggScores[n-1] - report.AggScores[0]
 	report.SuccessRDelta = report.SuccessRates[n-1] - report.SuccessRates[0]
 	report.DurationDeltaM = report.DurationsMs[n-1] - report.DurationsMs[0]
+	report.Significance = models.PairedBootstrap(
+		models.PairedRunsFromOutcomes(outcomes[0], outcomes[n-1]), models.BootstrapIterations, 1)
 
 	// Build task-level map keyed by test ID
 	type taskKey struct {
@@ -210,6 +216,9 @@ func printComparisonTable(r *comparisonReport) {
 		fmt.Printf("  %-9d", d)
 	}
 	fmt.Printf("  %+d\n", r.DurationDeltaM)
+	if r.Significance != nil {
+		fmt.Printf("  [1] -> [%d] per-run pass rate. %s\n", n, r.Significance.String())
+	}
 	fmt.Println()
 
 	// Tool metrics (additive in schemaVersion 1.1)

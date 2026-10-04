@@ -33,27 +33,46 @@ wazatator run <eval.yaml> -o <eval-dir>/results.json
 
 Add `--context-dir <dir>` when the tasks reference fixture files outside the default `fixtures/` folder. Runs take minutes: use a 10-minute timeout or run it in the background.
 
-Two optional modes, when the user asks for them:
+Optional modes, when the user asks for them:
 
-- **What does the skill add?** Add `--baseline`. Every task also runs with all skills off, and the report shows the per-task difference. A task that passes without the skill isn't evidence the skill helps.
+- **What does the skill add?** Add `--baseline`. Every task also runs with all skills off, and the report shows the per-task difference plus a paired bootstrap significance line (mean Δ, 95% CI, p). A task that passes without the skill isn't evidence the skill helps.
+- **Does it help on every model?** Repeat `--model` (for example `--model haiku --model sonnet`) together with `--baseline`. The skill transfer matrix shows the skill's effect per model and flags negative transfer, where the skill makes a model worse.
 - **Does it clash with my other skills?** Add `--skill-library <dir>` (for example `~/.claude/skills`), repeatable. Those skills compete for the same prompts, and trigger tests list prompts another skill took. Make sure `trigger_skill_routing` is off in `eval.yaml` for this.
+
+Significance needs repeated samples: suggest `trials_per_task: 3` or more when the user wants to trust a difference.
 
 ## 4. Explain the results
 
 Read `results.json` and report:
 
 - Each task: pass/fail, and for failures the grader name and its `feedback`.
-- `trigger_metrics` when trigger tests ran (precision, recall).
+- `trigger_metrics` when trigger tests ran (precision, recall, and `collisions` with a skill library).
+- `skill_impact_stats` with `--baseline`: say plainly whether the difference is significant. Do not present a non-significant gain as a win.
 - Token usage from the summary.
 
-For each failure, read that run's `final_output`, `tool_events`, and `skill_invocations` to find the cause. Common causes: the skill was never invoked, the agent asked a question instead of acting, or the output missed required content. Separate skill problems from unrealistic task prompts or graders.
+For failures, sample up to 5 failing runs and up to 3 passing runs (read at most about 15k characters of each). Read each run's `final_output`, `tool_events`, and `skill_invocations`, and contrast what the passing runs did that the failing ones did not. Common causes: the skill was never invoked, the agent asked a question instead of acting, or the output missed required content. Separate skill problems from unrealistic task prompts or graders.
 
-## 5. Offer a fix
+## 5. Offer a fix (gated, logged, reversible)
 
-Propose concrete `SKILL.md` edits for skill problems. If the user accepts, apply them, re-run with a new output file, and compare:
+Propose concrete `SKILL.md` edits for skill problems. Prefer describing what the agent must decide and when, over low-level step lists. If the user accepts:
 
-```bash
-wazatator compare <old-results.json> <new-results.json>
-```
+1. Keep the current results as the baseline (for example copy them to `old-results.json`) and back up `SKILL.md`.
+2. Apply the edit and re-run to a new output file, appending to the impact log:
+
+   ```bash
+   wazatator run <eval.yaml> -o new-results.json --impact-log skill-impact.md
+   ```
+
+3. Gate the change. Exit code 0 means no regression:
+
+   ```bash
+   wazatator gate --baseline old-results.json --current new-results.json
+   wazatator compare old-results.json new-results.json
+   ```
+
+4. Keep the edit only if the gate passes and the score beats the best so far. Otherwise restore the backed-up `SKILL.md` and say the edit was reverted.
+5. Fill in the **Change** and **Decision** lines of the new `skill-impact.md` entry (what you changed, kept or reverted, and why).
+
+If some tasks are tagged `holdout`, iterate with `--tags '!holdout'` and run the full suite once at the end. A fix that only improves the tasks you tuned against is overfitting.
 
 Report what changed. Do not claim a fix worked without a passing re-run.

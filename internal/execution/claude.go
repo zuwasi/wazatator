@@ -420,6 +420,16 @@ func installClaudeSkills(skillDirs []string, skillName string, libraryDirs []str
 	return filepath.ToSlash(rel), nil
 }
 
+// FindSkillFile returns the path of the named skill's SKILL.md (or .agent.md)
+// in skillDirs, using the same lookup as skill injection, or "" if not found.
+func FindSkillFile(skillDirs []string, skillName string) string {
+	sd, err := findSkillDefinition(skillDirs, skillName)
+	if err != nil || sd == nil {
+		return ""
+	}
+	return sd.Path
+}
+
 // listSkillDefinitions returns the SKILL.md skill in dir, or the SKILL.md
 // skills in its non-hidden subdirectories.
 func listSkillDefinitions(dir string) []*skillDefinition {

@@ -66,6 +66,7 @@ var (
 	recommendFlag   bool
 	baselineFlag    bool
 	skillLibraries  []string
+	impactLogPath   string
 	suggestFlag     bool
 	sessionLog      bool
 	sessionDir      string
@@ -151,7 +152,7 @@ You can also specify a skill name to run its eval:
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output with detailed progress")
 	cmd.Flags().StringVar(&transcriptDir, "transcript-dir", "", "Directory to save per-task transcript JSON files")
 	cmd.Flags().StringArrayVar(&taskFilters, "task", nil, "Filter tasks by name/ID glob pattern (can be repeated).")
-	cmd.Flags().StringArrayVar(&tagFilters, "tags", nil, "Filter tasks by tags, using glob patterns (can be repeated)")
+	cmd.Flags().StringArrayVar(&tagFilters, "tags", nil, "Filter tasks by tags, using glob patterns (can be repeated); prefix with ! to exclude, e.g. '!holdout'")
 	cmd.Flags().BoolVar(&parallel, "parallel", false, "Run tasks concurrently")
 	cmd.Flags().IntVar(&workers, "workers", 0, "Number of concurrent workers (default: auto, requires --parallel)")
 	cmd.Flags().IntVar(&trials, "trials", 0, "Number of trials per task (overrides config.trials_per_task only when explicitly provided)")
@@ -163,6 +164,7 @@ You can also specify a skill name to run its eval:
 	cmd.Flags().StringArrayVar(&modelOverrides, "model", nil, "Model to use (overrides spec config, can be repeated for comparison)")
 	cmd.Flags().BoolVar(&recommendFlag, "recommend", false, "Generate heuristic recommendation after multi-model run")
 	cmd.Flags().BoolVar(&baselineFlag, "baseline", false, "Run A/B comparison: with skills vs without skills")
+	cmd.Flags().StringVar(&impactLogPath, "impact-log", "", "Append a Markdown entry (skill version hash, scores, significance) to this skill impact log, e.g. skill-impact.md")
 	cmd.Flags().StringArrayVar(&skillLibraries, "skill-library", nil, "Load another skill folder (or a folder of skills) next to the target so they compete for prompts; reports collisions (can be repeated)")
 	cmd.Flags().BoolVar(&suggestFlag, "suggest", false, "Generate a Copilot report suggesting skill improvements based on test outcomes")
 	cmd.Flags().BoolVar(&sessionLog, "session-log", false, "Enable session event logging (NDJSON)")
@@ -662,6 +664,7 @@ func runCommandForSpec(cmd *cobra.Command, sp skillSpecPath, defaultSkills []str
 	// Print comparison table when multiple models were evaluated
 	if multiModel && len(allResults) > 0 {
 		printModelComparison(allResults)
+		printSkillTransferMatrix(allResults)
 	}
 
 	// Compute and print heuristic recommendation for multi-model runs
@@ -1044,6 +1047,12 @@ func runSingleModel(cmd *cobra.Command, spec *models.EvalSpec, specPath string, 
 			return nil, fmt.Errorf("failed to save output: %w", err)
 		}
 		fmt.Printf("\nResults saved to: %s\n", outputPath)
+	}
+	if impactLogPath != "" {
+		if err := appendImpactLog(impactLogPath, spec, specDir, outcome); err != nil {
+			return nil, err
+		}
+		fmt.Printf("Impact log updated: %s\n", impactLogPath)
 	}
 
 	// Return test failure as error so caller can decide how to handle it
@@ -2200,4 +2209,71 @@ func expandSkillLibrary(path string) (string, error) {
 		return "", fmt.Errorf("--skill-library %q is not a directory", path)
 	}
 	return abs, nil
+}
+
+// printSkillTransferMatrix shows, per model, whether the skill helps or hurts
+// compared with no skill. Skills tuned on one model can hurt another (negative
+// transfer, see the WikiSkill paper), so this needs --baseline with 2+ models.
+func printSkillTransferMatrix(results []modelResult) {
+	var rows []modelResult
+	for _, mr := range results {
+		if mr.outcome != nil && mr.outcome.IsBaseline && mr.outcome.BaselineOutcome != nil {
+			rows = append(rows, mr)
+		}
+	}
+	if len(rows) == 0 {
+		fmt.Println("Tip: add --baseline to see whether the skill helps or hurts each model (skill transfer matrix).")
+		return
+	}
+
+	fmt.Println()
+	fmt.Println(strings.Repeat("=", 96))
+	fmt.Println(" SKILL TRANSFER MATRIX (with skill vs without, per model)")
+	fmt.Println(strings.Repeat("=", 96))
+	fmt.Printf("%-24s %-11s %-11s %-10s %-20s %-7s %s\n", "Model", "With skill", "Without", "Delta", "95% CI", "p", "Verdict")
+	var hurts []string
+	for _, mr := range rows {
+		// Run-level pass rates averaged over tasks, so Delta matches the
+		// bootstrap CI; fall back to task-level rates when runs are missing.
+		with := mr.outcome.Digest.SuccessRate
+		without := mr.outcome.BaselineOutcome.Digest.SuccessRate
+		if pairs := models.PairedRunsFromOutcomes(mr.outcome.BaselineOutcome, mr.outcome); len(pairs) > 0 {
+			with, without = 0, 0
+			for _, p := range pairs {
+				with += models.PassRate(p.B) / float64(len(pairs))
+				without += models.PassRate(p.A) / float64(len(pairs))
+			}
+		}
+		delta := with - without
+		ci, pv := "n/a", "n/a"
+		significant := false
+		if s := mr.outcome.SkillImpactStats; s != nil {
+			ci = fmt.Sprintf("[%+.0f, %+.0f] pp", s.CI95Lo*100, s.CI95Hi*100)
+			pv = fmt.Sprintf("%.2f", s.PValue)
+			significant = s.Significant
+		}
+		verdict := "no effect"
+		switch {
+		case delta > 0:
+			verdict = "helps"
+		case delta < 0:
+			verdict = "HURTS (negative transfer)"
+			hurts = append(hurts, mr.modelID)
+		}
+		if delta != 0 {
+			if significant {
+				verdict += " *"
+			} else {
+				verdict += " (not significant)"
+			}
+		}
+		fmt.Printf("%-24s %-11s %-11s %-10s %-20s %-7s %s\n", mr.modelID,
+			fmt.Sprintf("%.1f%%", with*100), fmt.Sprintf("%.1f%%", without*100),
+			fmt.Sprintf("%+.1f pp", delta*100), ci, pv, verdict)
+	}
+	fmt.Println("Pass rates are per run, averaged over tasks. * significant at p < 0.05 (paired bootstrap)")
+	if len(hurts) > 0 {
+		fmt.Printf("Negative transfer: the skill lowers the pass rate on %s. It may encode workarounds for a different model.\n", strings.Join(hurts, ", "))
+	}
+	fmt.Println()
 }

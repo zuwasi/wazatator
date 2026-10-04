@@ -3,6 +3,7 @@ package orchestration
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/microsoft/waza/internal/models"
 )
@@ -71,24 +72,43 @@ func matchesTaskOrDisplayName(tc *models.TestCase, patterns []string) (bool, err
 	return false, nil
 }
 
+// A pattern starting with "!" excludes tasks with a matching tag, so
+// --tags '!holdout' runs everything except held-out tasks.
 func matchesTags(tc *models.TestCase, patterns []string) (bool, error) {
 	if len(patterns) == 0 {
 		return true, nil
 	}
 
-	for _, tag := range tc.Tags {
-		for _, p := range patterns {
-			tagMatched, err := filepath.Match(p, tag)
-
-			if err != nil {
-				return false, fmt.Errorf("invalid tag filter pattern %q: %w", p, err)
-			}
-
-			if tagMatched {
-				return true, nil
-			}
+	var include, exclude []string
+	for _, p := range patterns {
+		if strings.HasPrefix(p, "!") {
+			exclude = append(exclude, strings.TrimPrefix(p, "!"))
+		} else {
+			include = append(include, p)
 		}
 	}
 
-	return false, nil
+	anyTagMatches := func(pats []string) (bool, error) {
+		for _, tag := range tc.Tags {
+			for _, p := range pats {
+				tagMatched, err := filepath.Match(p, tag)
+				if err != nil {
+					return false, fmt.Errorf("invalid tag filter pattern %q: %w", p, err)
+				}
+				if tagMatched {
+					return true, nil
+				}
+			}
+		}
+		return false, nil
+	}
+
+	excluded, err := anyTagMatches(exclude)
+	if err != nil || excluded {
+		return false, err
+	}
+	if len(include) == 0 {
+		return true, nil
+	}
+	return anyTagMatches(include)
 }

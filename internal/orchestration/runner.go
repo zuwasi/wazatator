@@ -510,6 +510,10 @@ func (r *EvalRunner) mergeBaselineOutcomes(
 		}
 	}
 
+	// Paired bootstrap: is the difference real or run-to-run noise?
+	withSkills.SkillImpactStats = models.PairedBootstrap(
+		models.PairedRunsFromOutcomes(withoutSkills, withSkills), models.BootstrapIterations, 1)
+
 	// Print comparison report
 	r.printSkillImpactReport(withSkills, withoutSkills)
 
@@ -612,6 +616,9 @@ func (r *EvalRunner) printSkillImpactReport(withSkills, withoutSkills *models.Ev
 	}
 
 	fmt.Println()
+	if s := withSkills.SkillImpactStats; s != nil {
+		fmt.Println(s.String())
+	}
 	if delta > 0 {
 		fmt.Printf("Verdict: Skills have POSITIVE IMPACT (improved %d/%d tasks)\n", improved, len(withSkills.TestOutcomes))
 	} else if delta < 0 {

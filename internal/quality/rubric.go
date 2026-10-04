@@ -39,7 +39,7 @@ func DefaultRubric() []Dimension {
 		},
 		{
 			Name:        "trigger_precision",
-			Description: "Are USE FOR and DO NOT USE FOR triggers well-defined? Do they avoid overlap? Would they correctly route requests?",
+			Description: "Are USE FOR / when-to-apply and DO NOT USE FOR / when-not-to-apply triggers well-defined? Do they claim the questions users actually ask, and draw a clear line against similar skills so they win the right prompts in a crowded skill library?",
 			MinScore:    1,
 			MaxScore:    5,
 		},
@@ -51,7 +51,7 @@ func DefaultRubric() []Dimension {
 		},
 		{
 			Name:        "anti_patterns",
-			Description: "Does the skill avoid common anti-patterns such as vague instructions, conflicting directives, missing error handling guidance, or overly prescriptive steps?",
+			Description: "Does the skill avoid anti-patterns: vague instructions, conflicting or contradictory rules, missing error handling guidance, overly prescriptive low-level step-by-step commands, verification rituals (\"double-check your work\"), emphasis boosters (\"CRITICAL\", \"YOU MUST ALWAYS\"), mandatory scratchpad scaffolds, stale few-shot examples, and dated model configuration?",
 			MinScore:    1,
 			MaxScore:    5,
 		},

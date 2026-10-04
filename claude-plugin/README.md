@@ -5,7 +5,7 @@ Evaluate and improve your Agent Skills from inside Claude Code.
 | Skill | What it does |
 |---|---|
 | `/wazatator:new-eval [skill]` | Creates an eval suite (tasks, graders, trigger tests) for a skill |
-| `/wazatator:eval [skill or eval.yaml]` | Runs the suite through Claude Code, explains failures, and offers fixes |
+| `/wazatator:eval [skill or eval.yaml]` | Runs the suite through Claude Code, explains failures, and offers fixes that it keeps only if they pass a regression gate (logged to `skill-impact.md`, checked on held-out tasks, with significance and per-model transfer) |
 | `/wazatator:quality [skill]` | Static readiness check plus an LLM quality score for `SKILL.md` |
 
 Claude also uses these skills on its own when you ask it to test or review a skill.
@@ -24,7 +24,7 @@ Claude also uses these skills on its own when you ask it to test or review a ski
 
 ## Cost
 
-Every eval task and LLM-judged grader runs a real Claude Code session on your account. Keep `trials_per_task: 1` while iterating.
+Every eval task and LLM-judged grader runs a real Claude Code session on your account. Keep `trials_per_task: 1` while iterating; use 3 or more when you need a significant result.
 
 ## Attribution
 

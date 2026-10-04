@@ -21,5 +21,8 @@ Target skill directory: $ARGUMENTS (if empty, use the current directory).
    wazatator quality <skill-dir> --model sonnet
    ```
 
-4. Summarize both: overall score, the weakest dimensions, and the specific lines in `SKILL.md` that cause them.
-5. Propose concrete edits. If the user accepts, apply them and re-run step 3 to show the new score.
+4. Summarize both: overall score, the weakest dimensions, and the specific lines in `SKILL.md` that cause them. Call out these check warnings when present:
+   - `skill-too-long`: over 150 lines. Skills evolved in the WikiSkill study averaged 45 to 143 lines; move reference material to `references/`.
+   - `low-level-steps`: many code blocks. In WikiSkill, low-level workarounds written for a small model cut a stronger model from 50.5% to 18.1% (negative transfer). State goals and constraints instead.
+   - Missing "When to Apply" / "When NOT to Apply" boundaries: a common cause of trigger collisions in a crowded skill library.
+5. Propose concrete edits. If the user accepts, apply them and re-run step 3 to show the new score. To prove an edit changes behavior, not just the score, offer `/wazatator:eval` with `--baseline`.

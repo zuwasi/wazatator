@@ -1244,6 +1244,38 @@ TRIGGER ACCURACY
 
 `results.json` records `other_skills` per trigger prompt and `trigger_metrics.collisions`. Turn off `trigger_skill_routing` for collision tests: it names the target skill to the agent and hides collisions. `--skill-library` can be repeated; for Copilot runs the folders are passed as skill directories.
 
+### Evidence-Based Skill Improvement (WikiSkill)
+
+These features follow the evaluation protocol of [WikiSkill](https://arxiv.org/abs/2608.27454) (Google Research, 2026), a study of how agent skills evolve from experience. WikiSkill injects skills directly into the prompt and leaves triggering out of scope; Wazatator measures both the skill's effect and whether it is selected (`--skill-library`).
+
+**Statistical significance.** `--baseline` and `wazatator compare` report a paired, hierarchical bootstrap (1,000 resamples over tasks, then runs within each task): mean difference, 95% confidence interval, and p-value. A gain that isn't significant needs more tasks or `trials_per_task` before you trust it. `results.json` stores it as `skill_impact_stats`; `compare --format json` as `significance`.
+
+```text
+$ wazatator compare old-results.json new-results.json
+  ...
+  Success Rate          33.3     %  100.0    %  +66.7%
+  [1] -> [2] per-run pass rate. Significance: +50.0 pp, 95% CI [+0.0, +100.0], p = 0.15
+  (paired bootstrap, 3 tasks, 1000 resamples) -> not significant: add tasks or trials before trusting the difference
+```
+
+**Skill transfer matrix.** With `--baseline` and more than one `--model`, Wazatator shows the skill's effect per model and flags negative transfer: a skill tuned on one model can lower the pass rate of another (in WikiSkill, a small model's skill cut a stronger model from 50.5% to 18.1%).
+
+```text
+$ wazatator run eval.yaml --baseline --model haiku --model sonnet
+  ...
+ SKILL TRANSFER MATRIX (with skill vs without, per model)
+Model     With skill  Without  Delta     95% CI          p     Verdict
+haiku     66.7%       25.0%    +41.7 pp  [+0, +92] pp    0.13  helps (not significant)
+sonnet    75.0%       25.0%    +50.0 pp  [+0, +100] pp   0.12  helps (not significant)
+Pass rates are per run, averaged over tasks. * significant at p < 0.05 (paired bootstrap)
+```
+
+**Gated edits with an impact log.** `--impact-log skill-impact.md` appends one entry per run with the skill's SHA-256, line count, scores, significance, tokens, and blank **Change** / **Decision** lines. Combine it with `wazatator gate` (exit code 0 means no regression) to keep a `SKILL.md` edit only when it beats the previous results, and revert it otherwise. The log records rejected ideas so nobody proposes them again. The `/wazatator:eval` plugin skill runs this loop.
+
+**Held-out tasks.** A `--tags` pattern starting with `!` excludes matching tasks. Tag one or two tasks `holdout`, iterate with `--tags '!holdout'`, and run the full suite once at the end to catch edits that overfit the visible tasks. In the runs above (a demo `pirate-greeter` skill), a description fix took Haiku from 33% to 100% on the tuning tasks, while the held-out "say hi to this person" task still failed on both models: the skill now fired but never read the file that named the person.
+
+**Structure checks.** `wazatator check` recognizes "When to Apply" / "When NOT to Apply" sections as trigger and anti-trigger guidance, and warns with `skill-too-long` (body over 150 lines; WikiSkill's evolved skills averaged 45 to 143) and `low-level-steps` (10 or more code blocks). The `quality` rubric also scores crowded-library trigger precision and prompt anti-patterns (verification rituals, emphasis boosters, stale examples).
+
 ### MCP Mock Servers
 
 Use top-level `mcp_mocks` with `schemaVersion: "1.1"` for deterministic Copilot SDK evals that need MCP tools without live services. Waza launches each mock as a local stdio MCP server, so CI runs do not need network ports, external credentials, or real service state. Waza exposes every tool declared by each mock to the Copilot CLI automatically; do not add a separate `tools` allowlist.

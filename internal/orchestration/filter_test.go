@@ -105,6 +105,16 @@ func TestFilterTestCases_Tags(t *testing.T) {
 			Patterns:   []string{"yellow"},
 			MatchedIDs: nil,
 		},
+		{
+			Name:       "exclude_only", // held-out tasks: run everything except
+			Patterns:   []string{"!fast"},
+			MatchedIDs: []string{"tc-003", "tc-004"},
+		},
+		{
+			Name:       "include_and_exclude",
+			Patterns:   []string{"fast", "!red"},
+			MatchedIDs: []string{"tc-002"},
+		},
 	}
 
 	for _, tc := range tt {

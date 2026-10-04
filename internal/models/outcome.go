@@ -98,6 +98,9 @@ type EvaluationOutcome struct {
 	Metadata        map[string]any           `json:"metadata,omitempty"`
 	IsBaseline      bool                     `json:"is_baseline,omitempty"`
 	BaselineOutcome *EvaluationOutcome       `json:"baseline_outcome,omitempty"`
+	// SkillImpactStats is the paired-bootstrap significance test of the
+	// with-skill vs without-skill pass rates in a --baseline run.
+	SkillImpactStats *DeltaStats `json:"skill_impact_stats,omitempty"`
 }
 
 func (o EvaluationOutcome) MarshalJSON() ([]byte, error) {

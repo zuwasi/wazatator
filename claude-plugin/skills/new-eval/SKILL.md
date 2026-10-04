@@ -50,6 +50,7 @@ Target skill: $ARGUMENTS (if empty, use the skill in the current directory).
    - Keep `continue_session: true` on prompt graders that judge the answer: without it the judge sees only the workspace files, not the conversation.
 
    - For a task that must not use the skill, use `forbidden_skills: [<skill-name>]` instead of `required_skills`.
+   - Add `tags: [holdout]` to 1 or 2 tasks. `/wazatator:eval` tunes the skill with `--tags '!holdout'` and checks the held-out tasks only at the end, so improvements that merely overfit the visible tasks show up.
 6. Write `trigger_tests.yaml` next to `eval.yaml` with at least 3 `should_trigger_prompts` and 3 `should_not_trigger_prompts`, including near-misses the skill must not claim. Each entry is an object, not a bare string:
 
    ```yaml
@@ -61,4 +62,5 @@ Target skill: $ARGUMENTS (if empty, use the skill in the current directory).
      - prompt: "a near-miss the skill must not claim"
        confidence: high
    ```
-7. Show the user the files you created and offer `/wazatator:eval` to run them. Grader configuration errors only appear when the suite runs, so say the suite is untested until that first run.
+7. Check the skill itself while you are here. If `SKILL.md` has no "When to Apply" and "When NOT to Apply" sections, or is much longer than about 150 lines, suggest adding the sections and trimming it: in crowded skill libraries, explicit boundaries reduce trigger collisions, and long low-level recipes can hurt other models (WikiSkill, arXiv 2608.27454). Do not edit the skill without the user's agreement.
+8. Show the user the files you created and offer `/wazatator:eval` to run them. Grader configuration errors only appear when the suite runs, so say the suite is untested until that first run.

@@ -83,6 +83,8 @@ var triggerPatterns = []string{
 	"use this skill",
 	"triggers:",
 	"trigger phrases include",
+	"when to apply",
+	"when to use",
 }
 
 var antiTriggerPatterns = []string{
@@ -90,6 +92,9 @@ var antiTriggerPatterns = []string{
 	"not for:",
 	"don't use this skill",
 	"instead use",
+	"when not to apply",
+	"when not to use",
+	"do not use when",
 }
 
 var routingClarityPatterns = []string{
@@ -200,6 +205,7 @@ func (h HeuristicScorer) Score(sk *skill.Skill) *ScoreResult {
 	if sk.Tokens > 0 {
 		validateTokenBudget(sk.Tokens, softLimit, hardLimit, result)
 	}
+	validateConciseness(trimmedBody, result)
 
 	result.Level = computeLevel(result)
 
@@ -315,6 +321,37 @@ func validateTokenBudget(tokenCount int, softLimit int, hardLimit int, r *ScoreR
 		r.Issues = append(r.Issues, Issue{
 			Rule:     "token-soft-limit",
 			Message:  fmt.Sprintf("SKILL.md is %d tokens (warning threshold %d)", tokenCount, softLimit),
+			Severity: "warning",
+		})
+	}
+}
+
+// Size and step-granularity thresholds from the WikiSkill paper (Google
+// Research, arXiv 2608.27454): its evolved skills averaged 45-143 lines, and
+// skills written as many low-level one-line commands for weaker models hurt
+// stronger ones (negative transfer).
+const (
+	maxRecommendedSkillLines = 150
+	maxRecommendedCodeBlocks = 10
+)
+
+// validateConciseness warns about skill bodies that are too long or made of
+// many small command blocks.
+func validateConciseness(body string, r *ScoreResult) {
+	if body == "" {
+		return
+	}
+	if lines := strings.Count(body, "\n") + 1; lines > maxRecommendedSkillLines {
+		r.Issues = append(r.Issues, Issue{
+			Rule:     "skill-too-long",
+			Message:  fmt.Sprintf("Skill body is %d lines; concise skills (under ~%d lines) tend to perform better. Move reference material to references/.", lines, maxRecommendedSkillLines),
+			Severity: "warning",
+		})
+	}
+	if blocks := strings.Count(body, "```") / 2; blocks >= maxRecommendedCodeBlocks {
+		r.Issues = append(r.Issues, Issue{
+			Rule:     "low-level-steps",
+			Message:  fmt.Sprintf("Skill has %d code blocks; step-by-step command recipes can over-constrain stronger models. State goals and constraints instead.", blocks),
 			Severity: "warning",
 		})
 	}
