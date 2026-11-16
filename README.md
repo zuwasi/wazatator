@@ -2,9 +2,7 @@
 
 Evaluate AI agent skills with **Claude Code**: scaffold eval suites, run benchmarks, and compare results across models. Wazatator watches the agent run your skill (transcript, tool calls, files) and scores it.
 
-> Wazatator is a fork of [Microsoft Waza](https://github.com/microsoft/waza) (MIT License) that adds a Claude Code executor (`executor: claude-cli`, the default) and a Claude Code plugin. It is not affiliated with or endorsed by Microsoft. Upstream copyright notices are kept in [LICENSE](LICENSE). The CLI binary is `wazatator`; command examples below that say `waza` work the same with `wazatator`.
-
-**Claude Code plugin:** `/plugin marketplace add zuwasi/wazatator-plugin`, then `/plugin install wazatator@wazatator`. The plugin lives in its own repository: https://github.com/zuwasi/wazatator-plugin
+> Wazatator is a fork of [Microsoft Waza](https://github.com/microsoft/waza) (MIT License) that adds a Claude Code executor (`executor: claude-cli`, the default). It is not affiliated with or endorsed by Microsoft. Upstream copyright notices are kept in [LICENSE](LICENSE). Maintained by [Engineering Software Lab (ESL)](https://eswlab.com). The CLI binary is `wazatator`; command examples below that say `waza` work the same with `wazatator`.
 
 📖 **[Getting Started / Docs](https://microsoft.github.io/waza/)**
 
@@ -1270,7 +1268,7 @@ sonnet    75.0%       25.0%    +50.0 pp  [+0, +100] pp   0.12  helps (not signif
 Pass rates are per run, averaged over tasks. * significant at p < 0.05 (paired bootstrap)
 ```
 
-**Gated edits with an impact log.** `--impact-log skill-impact.md` appends one entry per run with the skill's SHA-256, line count, scores, significance, tokens, and blank **Change** / **Decision** lines. Combine it with `wazatator gate` (exit code 0 means no regression) to keep a `SKILL.md` edit only when it beats the previous results, and revert it otherwise. The log records rejected ideas so nobody proposes them again. The `/wazatator:eval` plugin skill runs this loop.
+**Gated edits with an impact log.** `--impact-log skill-impact.md` appends one entry per run with the skill's SHA-256, line count, scores, significance, tokens, and blank **Change** / **Decision** lines. Combine it with `wazatator gate` (exit code 0 means no regression) to keep a `SKILL.md` edit only when it beats the previous results, and revert it otherwise. The log records rejected ideas so nobody proposes them again.
 
 **Held-out tasks.** A `--tags` pattern starting with `!` excludes matching tasks. Tag one or two tasks `holdout`, iterate with `--tags '!holdout'`, and run the full suite once at the end to catch edits that overfit the visible tasks. In the runs above (a demo `pirate-greeter` skill), a description fix took Haiku from 33% to 100% on the tuning tasks, while the held-out "say hi to this person" task still failed on both models: the skill now fired but never read the file that named the person.
 
